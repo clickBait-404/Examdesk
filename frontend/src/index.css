@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { -webkit-font-smoothing: antialiased; }
+
+  body {
+    @apply bg-gray-50 text-gray-900;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-gray-400; }
+}
+
+@layer components {
+  /* Cards */
+  .card {
+    @apply bg-white border border-gray-200 rounded-xl shadow-card;
+  }
+
+  /* Form inputs */
+  .input {
+    @apply w-full px-3 py-2 text-sm border border-gray-300 rounded-lg
+           focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent
+           placeholder:text-gray-400 transition-shadow;
+  }
+
+  .input-error {
+    @apply border-red-400 focus:ring-red-400;
+  }
+
+  /* Buttons */
+  .btn { @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-sm  { @apply px-3 py-1.5 text-xs; }
+  .btn-md  { @apply px-4 py-2 text-sm; }
+  .btn-lg  { @apply px-5 py-2.5 text-base; }
+
+  .btn-primary   { @apply bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800; }
+  .btn-secondary { @apply bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 active:bg-gray-100; }
+  .btn-ghost     { @apply text-gray-600 hover:bg-gray-100 active:bg-gray-200; }
+  .btn-danger    { @apply bg-red-600 text-white hover:bg-red-700; }
+  .btn-success   { @apply bg-green-600 text-white hover:bg-green-700; }
+
+  /* Badges */
+  .badge { @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium; }
+  .badge-blue   { @apply bg-blue-50 text-blue-700; }
+  .badge-green  { @apply bg-green-50 text-green-700; }
+  .badge-amber  { @apply bg-amber-50 text-amber-700; }
+  .badge-red    { @apply bg-red-50 text-red-700; }
+  .badge-purple { @apply bg-purple-50 text-purple-700; }
+  .badge-gray   { @apply bg-gray-100 text-gray-600; }
+
+  /* Tables */
+  .table-container { @apply w-full overflow-x-auto; }
+  .table { @apply w-full text-sm border-collapse; }
+  .table th {
+    @apply px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide
+           bg-gray-50 border-b border-gray-200;
+  }
+  .table td {
+    @apply px-4 py-3 text-gray-700 border-b border-gray-100 align-middle;
+  }
+  .table tbody tr:last-child td { @apply border-b-0; }
+  .table tbody tr:hover td { @apply bg-gray-50/70; }
+
+  /* Progress bar */
+  .progress { @apply h-1.5 bg-gray-200 rounded-full overflow-hidden; }
+  .progress-fill { @apply h-full rounded-full transition-all duration-300; }
+
+  /* Sidebar nav item */
+  .nav-item {
+    @apply flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-600
+           cursor-pointer transition-all border-none bg-transparent w-full text-left;
+  }
+  .nav-item:hover { @apply bg-gray-100 text-gray-900; }
+  .nav-item.active { @apply bg-blue-50 text-brand-700 font-medium; }
+}
+
+/* Exam fullscreen */
+.exam-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+/* Fade-in animation */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+
+/* Pulse for live indicator */
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+.live-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
