@@ -256,5 +256,3 @@ Interactive Swagger UI available at `/api/docs` when the backend is running.
 Full endpoint reference: see `backend/README.md`
 
 ---
-
-*Built as a production-quality portfolio project. Suitable for final-year CS capstone, placement portfolio, or as a base for a real product.*
