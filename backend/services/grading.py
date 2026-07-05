@@ -286,3 +286,4 @@ async def _issue_certificate(result: Result, db: AsyncSession):
             message=f"Your certificate has been issued. Verification code: {code}",
             notification_metadata={"certificate_verification_code": code},
         ))
+  
