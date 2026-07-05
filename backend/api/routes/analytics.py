@@ -340,3 +340,4 @@ async def verify_certificate(code: str, db: DB):
         percentage=cert.result.percentage if cert.result else None,
         issued_at=cert.issued_at,
     )
+  
