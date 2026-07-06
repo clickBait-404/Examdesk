@@ -256,3 +256,4 @@ Interactive Swagger UI available at `/api/docs` when the backend is running.
 Full endpoint reference: see `backend/README.md`
 
 ---
+  
