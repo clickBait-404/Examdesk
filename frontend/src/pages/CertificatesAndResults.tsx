@@ -298,3 +298,4 @@ export function ResultDetailPage() {
     </AppShell>
   )
 }
+  
