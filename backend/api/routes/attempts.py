@@ -268,3 +268,4 @@ async def _auto_submit(attempt: ExamAttempt, db):
         .values(status=AttemptStatus.timed_out, submitted_at=datetime.now(timezone.utc))
     )
     await grade_attempt(attempt_id=attempt.id, db=db)
+  
