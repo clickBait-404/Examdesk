@@ -80,13 +80,17 @@ async def _build_token_response(user: User, db: AsyncSession) -> TokenResponse:
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserCreate, db: DB):
     # Check email uniqueness
-    existing = await db.execute(select(User).where(User.email == payload.email.lower()))
+    existing = await db.execute(
+        select(User).where(User.email == payload.email.lower())
+    )
+
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         )
 
+    # Create user
     user = User(
         email=payload.email.lower(),
         hashed_password=hash_password(payload.password),
@@ -94,24 +98,65 @@ async def register(payload: UserCreate, db: DB):
         role=UserRole(payload.role),
         phone=payload.phone,
     )
-    db.add(user)
-    await db.flush()  # get user.id
 
-    if payload.role == "student" and payload.student_profile:
-        profile = StudentProfile(user_id=user.id, **payload.student_profile.model_dump())
-        db.add(profile)
-    elif payload.role == "instructor" and payload.instructor_profile:
-        profile = InstructorProfile(user_id=user.id, **payload.instructor_profile.model_dump())
-        db.add(profile)
+    db.add(user)
+    await db.flush()  # Generates user.id
+
+    # Create profile automatically
+    if payload.role == "student":
+        profile_data = (
+            payload.student_profile.model_dump()
+            if payload.student_profile
+            else {}
+        )
+
+        db.add(
+            StudentProfile(
+                user_id=user.id,
+                **profile_data,
+            )
+        )
+
+    elif payload.role == "instructor":
+        profile_data = (
+            payload.instructor_profile.model_dump()
+            if payload.instructor_profile
+            else {}
+        )
+
+        db.add(
+            InstructorProfile(
+                user_id=user.id,
+                **profile_data,
+            )
+        )
 
     # Audit log
-    db.add(AuditLog(user_id=user.id, action=AuditAction.user_created, resource_type="user", resource_id=str(user.id)))
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action=AuditAction.user_created,
+            resource_type="user",
+            resource_id=str(user.id),
+        )
+    )
+
+    # Commit transaction
     await db.commit()
 
-    result = await db.execute(select(User).where(User.id == user.id))
-    return UserResponse.model_validate(result.scalar_one())
+    # Reload user with relationships eagerly loaded
+    result = await db.execute(
+        select(User)
+        .options(
+            selectinload(User.student_profile),
+            selectinload(User.instructor_profile),
+        )
+        .where(User.id == user.id)
+    )
 
+    user = result.scalar_one()
 
+    return UserResponse.model_validate(user)
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, request: Request, db: DB):
     result = await db.execute(select(User).where(User.email == payload.email.lower()))

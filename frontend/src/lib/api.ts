@@ -167,3 +167,4 @@ export const auditApi = {
   list: (params?: { page?: number; size?: number; action?: string }) =>
     api.get<Paginated<AuditLog>>('/audit-logs', { params }).then(r => r.data),
 }
+  

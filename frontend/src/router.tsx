@@ -1,3 +1,4 @@
+import RegisterPage from '@/pages/RegisterPage'
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import type { Role } from '@/types'
@@ -65,7 +66,7 @@ const router = createBrowserRouter([
     element: <RedirectIfAuth />,
     children: [
       { path: '/login', element: <LoginPage /> },
-      { path: '/register', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage  /> },
     ],
   },
 

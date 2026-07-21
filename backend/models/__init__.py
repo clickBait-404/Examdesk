@@ -513,3 +513,4 @@ class AuditLog(Base, UUIDMixin):
         Index("ix_audit_logs_action", "action"),
         Index("ix_audit_logs_occurred_at", "occurred_at"),
     )
+  

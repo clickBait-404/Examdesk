@@ -62,8 +62,7 @@ const NAV: Record<Role, { section: string; items: { to: string; icon: string; la
     {
       section: 'Dashboard',
       items: [
-        { to: '/dashboard',        icon: '📊', label: 'Dashboard' },
-        { to: '/exam-monitoring',  icon: '👁️', label: 'Live Monitor' },
+        { to: '/dashboard', icon: '📊', label: 'Dashboard' },
       ],
     },
     {

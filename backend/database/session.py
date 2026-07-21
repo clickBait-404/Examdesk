@@ -1,6 +1,11 @@
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import MetaData
+
 from config import settings
 
 # Naming convention for Alembic migrations
@@ -14,20 +19,23 @@ convention = {
 
 metadata = MetaData(naming_convention=convention)
 
+# Async SQLAlchemy Engine
 engine = create_async_engine(
     settings.DATABASE_URL,
+    echo=settings.DEBUG,
+    pool_pre_ping=True,
     pool_size=settings.DATABASE_POOL_SIZE,
     max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    pool_pre_ping=True,
-    echo=settings.DEBUG,
+    connect_args={"ssl": True},
 )
 
+# Session Factory
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
-    autocommit=False,
     autoflush=False,
+    autocommit=False,
 )
 
 
@@ -35,7 +43,7 @@ class Base(DeclarativeBase):
     metadata = metadata
 
 
-async def get_db() -> AsyncSession:
+async def get_db():
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -48,12 +56,12 @@ async def get_db() -> AsyncSession:
 
 
 async def create_tables():
-    """Create all tables (used in development/testing)."""
+    """Create all database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def drop_tables():
-    """Drop all tables (used in testing)."""
+    """Drop all database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
