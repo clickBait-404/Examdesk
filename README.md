@@ -37,7 +37,7 @@ The platform supports Students, Instructors, and Administrators with secure auth
 - Alembic
 - JWT Authentication
 - AsyncPG
-- Pytest
+
 
 ## Frontend
 
