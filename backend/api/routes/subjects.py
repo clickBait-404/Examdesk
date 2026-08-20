@@ -7,11 +7,15 @@ PUT    /subjects/{id}  (admin)
 DELETE /subjects/{id}  (admin)
 
 Audit Logs Routes
-GET /audit-logs  (admin)
+GET /audit-logs         (admin)
+GET /audit-logs/export  (admin)
 """
 
+import csv
+import io
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, update
 
 from api.dependencies import CurrentUser, DB, RequireAdmin
@@ -108,4 +112,32 @@ async def list_audit_logs(
         items=[AuditLogResponse.model_validate(l) for l in logs],
         total=total, page=page, size=size,
         pages=(total + size - 1) // size,
+    )
+
+
+@audit_router.get("/export")
+async def export_audit_logs_csv(_: RequireAdmin, db: DB):
+    result = await db.execute(select(AuditLog).order_by(AuditLog.occurred_at.desc()))
+    logs = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Time", "User ID", "Action", "Resource Type", "Resource ID", "IP", "Description"])
+
+    for log in logs:
+        writer.writerow([
+            log.occurred_at.strftime("%Y-%m-%d %H:%M:%S"),
+            str(log.user_id) if log.user_id else "",
+            log.action.value,
+            log.resource_type or "",
+            log.resource_id or "",
+            log.ip_address or "",
+            log.description or "",
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="audit_logs.csv"'},
     )
