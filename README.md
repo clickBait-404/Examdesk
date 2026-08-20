@@ -23,7 +23,6 @@ The platform supports Students, Instructors, and Administrators with secure auth
 - ✅ Question Bank
 - ✅ Automatic Grading
 - ✅ Swagger Documentation
-- ✅ 20/20 Backend Tests Passing
 
 ---
 
@@ -213,20 +212,13 @@ Result
 
 ✔ Grading
 
-Total Backend Tests
-
-```
-20 Passed
-```
-
----
 
 # Deployment
 
 - Render
 - Vercel
 - Neon PostgreSQL
-- GitHub Actions CI/CD
+
 
 ---
 
