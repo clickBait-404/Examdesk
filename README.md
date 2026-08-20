@@ -4,7 +4,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-blue)
-![Tests](https://img.shields.io/badge/Tests-20%20Passing-success)
+
 
 A production-ready Online Examination System built using **FastAPI**, **React**, **PostgreSQL**, **Redis**, and **Docker**.
 
