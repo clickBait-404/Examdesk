@@ -105,6 +105,55 @@ async def create_question(payload: QuestionCreate, current_user: CurrentUser, db
     return QuestionResponse.model_validate(result.scalar_one())
 
 
+@router.post("/bulk-import")
+async def bulk_import_questions(payload: dict, current_user: CurrentUser, db: DB):
+    if current_user.role.value not in ("instructor", "admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    from models import InstructorProfile
+    instructor_id = None
+    if current_user.role.value == "instructor":
+        ip = await db.scalar(select(InstructorProfile).where(InstructorProfile.user_id == current_user.id))
+        if ip:
+            instructor_id = ip.id
+
+    questions_data = payload.get("questions", [])
+    created = 0
+
+    for q in questions_data:
+        question = Question(
+            text=q["text"],
+            question_type=QuestionType(q.get("question_type", "mcq")),
+            difficulty=DifficultyLevel(q.get("difficulty", "medium")),
+            topic=q.get("topic"),
+            tags=q.get("tags", []),
+            explanation=q.get("explanation"),
+            subject_id=q.get("subject_id") or None,
+            created_by_id=instructor_id,
+        )
+        db.add(question)
+        await db.flush()
+
+        for i, opt in enumerate(q.get("options", [])):
+            db.add(QuestionOption(
+                question_id=question.id,
+                text=opt["text"],
+                is_correct=opt.get("is_correct", False),
+                order_index=i,
+            ))
+        created += 1
+
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action=AuditAction.question_added,
+        resource_type="question",
+        resource_id="bulk",
+    ))
+    await db.commit()
+
+    return {"created": created}
+
+
 @router.get("/{question_id}", response_model=QuestionResponse)
 async def get_question(question_id: UUID, current_user: CurrentUser, db: DB):
     result = await db.execute(
