@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import Papa from 'papaparse'
 import { questionsApi, subjectsApi } from '@/lib/api'
 import { AppShell } from '@/components/layout/AppShell'
 import { Card, Button, Badge, StatusBadge, Modal, Input, Select, Textarea, SearchBar, PageLoader, EmptyState } from '@/components/ui'
@@ -15,6 +16,7 @@ export function QuestionBankPage() {
   const [filterDifficulty, setFilterDifficulty] = useState('')
   const [filterType, setFilterType] = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [showBulkImport, setShowBulkImport] = useState(false)
   const [page, setPage] = useState(1)
 
   const { data: subjects } = useQuery({ queryKey: ['subjects'], queryFn: subjectsApi.list })
@@ -39,7 +41,7 @@ export function QuestionBankPage() {
         </div>
         {canEdit && (
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm">📤 Bulk Import</Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowBulkImport(true)}>📤 Bulk Import</Button>
             <Button variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ Add Question</Button>
           </div>
         )}
@@ -122,6 +124,7 @@ export function QuestionBankPage() {
       )}
 
       <AddQuestionModal open={showAdd} onClose={() => setShowAdd(false)} subjects={subjects || []} />
+      <BulkImportModal open={showBulkImport} onClose={() => setShowBulkImport(false)} />
     </AppShell>
   )
 }
@@ -172,6 +175,65 @@ function AddQuestionModal({ open, onClose, subjects }: { open: boolean; onClose:
           </div>
         )}
         <Input label="Explanation (shown after exam)" value={form.explanation} onChange={e => setForm(f => ({ ...f, explanation: e.target.value }))} placeholder="Optional explanation for the correct answer" />
+      </div>
+    </Modal>
+  )
+}
+
+function BulkImportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handleImport = () => {
+    if (!file) return
+    setUploading(true)
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (res) => {
+        try {
+          const parsed = (res.data as any[]).map(row => ({
+            text: row.text,
+            question_type: row.question_type || 'mcq',
+            difficulty: row.difficulty || 'medium',
+            topic: row.topic || undefined,
+            explanation: row.explanation || undefined,
+            tags: row.topic ? [row.topic] : [],
+            options: [
+              { text: row.option_a, is_correct: row.correct === 'A' },
+              { text: row.option_b, is_correct: row.correct === 'B' },
+              { text: row.option_c, is_correct: row.correct === 'C' },
+              { text: row.option_d, is_correct: row.correct === 'D' },
+            ].filter(o => o.text),
+          }))
+          await questionsApi.bulkImport(parsed)
+          toast.success(`${parsed.length} questions imported!`)
+          qc.invalidateQueries({ queryKey: ['questions'] })
+          setFile(null)
+          onClose()
+        } catch {
+          toast.error('Bulk import failed — check CSV format')
+        } finally {
+          setUploading(false)
+        }
+      },
+    })
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Bulk Import Questions"
+      footer={<>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" loading={uploading} disabled={!file} onClick={handleImport}>Import</Button>
+      </>}
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500">
+          CSV columns: <code>text, question_type, difficulty, topic, option_a, option_b, option_c, option_d, correct, explanation</code>
+          <br />(correct: A / B / C / D)
+        </p>
+        <input type="file" accept=".csv" onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} className="input" />
       </div>
     </Modal>
   )
