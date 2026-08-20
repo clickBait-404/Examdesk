@@ -3,6 +3,7 @@ ExamDesk — Analytics Routes
 GET /analytics/student/me
 GET /analytics/instructor
 GET /analytics/admin
+GET /analytics/admin/export
 GET /leaderboard/{exam_id}
 GET /leaderboard/global
 
@@ -18,9 +19,12 @@ GET  /certificates/{id}
 GET  /certificates/verify/{code}
 """
 
+import csv
+import io
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 
@@ -188,6 +192,36 @@ async def admin_analytics(current_user: CurrentUser, db: DB):
     )
 
 
+@analytics_router.get("/admin/export")
+async def export_admin_report_csv(current_user: CurrentUser, db: DB):
+    if current_user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    exams_result = await db.execute(select(Exam))
+    exams = exams_result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Title", "Status", "Total Marks", "Passing Marks", "Scheduled Start", "Duration (min)"])
+
+    for e in exams:
+        writer.writerow([
+            e.title,
+            e.status.value,
+            e.total_marks,
+            e.passing_marks,
+            e.scheduled_start.strftime("%Y-%m-%d %H:%M") if e.scheduled_start else "",
+            e.duration_minutes,
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="admin_report.csv"'},
+    )
+
+
 # ─── Leaderboard ───────────────────────────────────────────────────────────
 
 leaderboard_router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
@@ -340,4 +374,3 @@ async def verify_certificate(code: str, db: DB):
         percentage=cert.result.percentage if cert.result else None,
         issued_at=cert.issued_at,
     )
-  
