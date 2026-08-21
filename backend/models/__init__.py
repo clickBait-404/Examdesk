@@ -122,10 +122,29 @@ class User(Base, UUIDMixin, TimestampMixin):
     instructor_profile = relationship("InstructorProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
+    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_users_role_status", "role", "status"),
     )
+
+
+class RefreshToken(Base, UUIDMixin, TimestampMixin):
+    """
+    Tracks issued refresh tokens so they can actually be rotated:
+    each refresh consumes (revokes) the old token and issues a new
+    one. If a revoked token is presented again, that's a signal it
+    was stolen and reused — the whole family is revoked.
+    """
+    __tablename__ = "refresh_tokens"
+
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    jti = Column(String(64), unique=True, nullable=False, index=True)
+    family_id = Column(String(64), nullable=False, index=True)
+    revoked = Column(Boolean, default=False, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    user = relationship("User", back_populates="refresh_tokens")
 
 
 class StudentProfile(Base, UUIDMixin, TimestampMixin):
@@ -513,4 +532,3 @@ class AuditLog(Base, UUIDMixin):
         Index("ix_audit_logs_action", "action"),
         Index("ix_audit_logs_occurred_at", "occurred_at"),
     )
-  
