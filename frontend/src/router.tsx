@@ -4,6 +4,8 @@ import { useAuthStore } from '@/stores/auth'
 import type { Role } from '@/types'
 
 import LoginPage from '@/pages/LoginPage'
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
+import ResetPasswordPage from '@/pages/ResetPasswordPage'
 import StudentDashboard from '@/pages/student/Dashboard'
 import ExamPage from '@/pages/student/ExamPage'
 import InstructorDashboard from '@/pages/instructor/Dashboard'
@@ -67,6 +69,8 @@ const router = createBrowserRouter([
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage  /> },
+      { path: '/forgot-password', element: <ForgotPasswordPage /> },
+      { path: '/reset-password', element: <ResetPasswordPage /> },
     ],
   },
 
