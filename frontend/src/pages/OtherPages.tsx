@@ -184,6 +184,7 @@ export function ExamsListPage() {
 export function ExamResultsPage() {
   const { examId } = useParams<{ examId: string }>()
   const qc = useQueryClient()
+  const [isExporting, setIsExporting] = useState(false)
 
   const { data: exam } = useQuery({
     queryKey: ['exam', examId],
@@ -202,6 +203,26 @@ export function ExamResultsPage() {
     onSuccess: () => { toast.success('All results published!'); qc.invalidateQueries({ queryKey: ['results', 'exam', examId] }) },
   })
 
+  const handleExportCsv = async () => {
+    if (!examId) return
+    setIsExporting(true)
+    try {
+      const blob = await resultsApi.exportCsv(examId)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${exam?.title || 'exam'}_results.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to export CSV')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   const results = resultsData?.items || []
   const passed = results.filter(r => r.is_passed).length
   const avgPct = results.length ? Math.round(results.reduce((a, r) => a + r.percentage, 0) / results.length) : 0
@@ -214,7 +235,7 @@ export function ExamResultsPage() {
           <p className="text-sm text-gray-500">{resultsData?.total || 0} results</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm">📥 Export CSV</Button>
+          <Button variant="secondary" size="sm" loading={isExporting} onClick={handleExportCsv}>📥 Export CSV</Button>
           <Button variant="primary" size="sm" loading={publishAllMutation.isPending}
             onClick={() => publishAllMutation.mutate()}>
             📢 Publish All
@@ -388,11 +409,31 @@ export function SubjectsPage() {
 export function AuditLogsPage() {
   const [page, setPage] = useState(1)
   const [actionFilter, setActionFilter] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit-logs', { page, actionFilter }],
     queryFn: () => auditApi.list({ page, size: 25, action: actionFilter || undefined }),
   })
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const blob = await auditApi.exportCsv()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'audit_logs.csv'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to export logs')
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   const actionColor: Record<string, string> = {
     login: 'badge-blue', logout: 'badge-gray',
@@ -410,7 +451,7 @@ export function AuditLogsPage() {
           <h2 className="text-lg font-bold text-gray-900">Audit Logs</h2>
           <p className="text-sm text-gray-500">Complete system activity history</p>
         </div>
-        <Button variant="secondary" size="sm">📥 Export CSV</Button>
+        <Button variant="secondary" size="sm" loading={isExporting} onClick={handleExport}>📥 Export CSV</Button>
       </div>
 
       {/* Filters */}
@@ -476,4 +517,3 @@ export function AuditLogsPage() {
     </AppShell>
   )
 }
-  

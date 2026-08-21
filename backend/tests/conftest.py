@@ -1,7 +1,10 @@
 """
 ExamDesk — Pytest Configuration & Shared Fixtures
 """
+import os
+import sys
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import asyncio
 import pytest
 import pytest_asyncio
@@ -13,7 +16,7 @@ from database.session import Base, get_db
 from auth.security import hash_password
 from models import User, UserRole, StudentProfile, InstructorProfile
 
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:password@localhost:5432/examdesk_test"
+TEST_DATABASE_URL = "postgresql+asyncpg://examdesk:examdesk@localhost:5432/examdesk_test"
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 TestSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)

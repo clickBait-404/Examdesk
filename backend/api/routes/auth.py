@@ -30,7 +30,7 @@ from auth.security import (
     verify_password,
     verify_password_reset_token,
 )
-from models import AuditLog, AuditAction, User, UserRole, UserStatus, StudentProfile, InstructorProfile
+from models import AuditLog, AuditAction, User, UserRole, UserStatus, StudentProfile, InstructorProfile, RefreshToken
 from schemas import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -47,9 +47,30 @@ from config import settings
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-async def _build_token_response(user: User, db: AsyncSession) -> TokenResponse:
+async def _build_token_response(
+    user: User,
+    db: AsyncSession,
+    family_id: str | None = None,
+) -> TokenResponse:
+    """
+    Issues a fresh access+refresh pair. When called from /refresh,
+    `family_id` carries forward the same token family so reuse of a
+    revoked token in that family can be detected; on a brand-new
+    login it's left unset and a new family is started.
+    """
     access_token = create_access_token(subject=str(user.id), role=user.role.value)
-    refresh_token = create_refresh_token(subject=str(user.id), role=user.role.value)
+    refresh_token, meta = create_refresh_token(
+        subject=str(user.id), role=user.role.value, family_id=family_id
+    )
+
+    # Persist the issued refresh token so it can be looked up, revoked
+    # on rotation, and checked for reuse.
+    db.add(RefreshToken(
+        user_id=user.id,
+        jti=meta["jti"],
+        family_id=meta["family_id"],
+        expires_at=meta["expires_at"],
+    ))
 
     # Update last login
     await db.execute(
@@ -197,8 +218,36 @@ async def refresh_token(payload: RefreshTokenRequest, db: DB):
         if data.get("type") != "refresh":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
         user_id = data.get("sub")
+        jti = data.get("jti")
+        family_id = data.get("family_id")
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+
+    if not jti or not family_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed refresh token")
+
+    stored = await db.scalar(select(RefreshToken).where(RefreshToken.jti == jti))
+    if not stored:
+        # A syntactically valid, signed token that we never issued (or
+        # that's already been deleted) — treat as invalid.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+
+    if stored.revoked:
+        # This exact token was already used once before — someone is
+        # replaying an old refresh token. That means the token (or an
+        # earlier one in this family) was stolen. Revoke the entire
+        # family so both the attacker's and the legitimate user's
+        # copies stop working, forcing a fresh login.
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == stored.family_id)
+            .values(revoked=True)
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token reuse detected — all sessions in this family have been revoked. Please log in again.",
+        )
 
     from uuid import UUID
     result = await db.execute(select(User).where(User.id == UUID(user_id)))
@@ -206,16 +255,43 @@ async def refresh_token(payload: RefreshTokenRequest, db: DB):
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    return await _build_token_response(user, db)
+    # Rotation: consume (revoke) the presented token, then issue a new
+    # pair in the same family.
+    stored.revoked = True
+
+    return await _build_token_response(user, db, family_id=family_id)
 
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout(current_user: CurrentUser, request: Request, db: DB):
+async def logout(
+    current_user: CurrentUser,
+    request: Request,
+    db: DB,
+    payload: RefreshTokenRequest | None = None,
+):
+    # Revoke this session's refresh token family so it can't be used
+    # again even though the access token remains valid until it
+    # naturally expires (a known, accepted limitation of stateless
+    # access tokens — see note on get_current_user).
+    if payload and payload.refresh_token:
+        try:
+            data = decode_token(payload.refresh_token)
+            family_id = data.get("family_id")
+            if family_id:
+                await db.execute(
+                    update(RefreshToken)
+                    .where(RefreshToken.family_id == family_id)
+                    .values(revoked=True)
+                )
+        except JWTError:
+            pass  # Already invalid/expired — nothing to revoke.
+
     db.add(AuditLog(
         user_id=current_user.id,
         action=AuditAction.logout,
         ip_address=request.client.host if request.client else None,
     ))
+    await db.commit()
     return MessageResponse(message="Logged out successfully")
 
 

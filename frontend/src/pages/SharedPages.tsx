@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { resultsApi, notificationsApi, usersApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -156,6 +157,7 @@ export function UserManagementPage() {
   const [tab, setTab] = useState('student')
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [showBulkUpload, setShowBulkUpload] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['users', tab, search],
@@ -175,7 +177,7 @@ export function UserManagementPage() {
           <p className="text-sm text-gray-500">{data?.total || 0} {tab}s</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm">📤 Bulk Upload</Button>
+          <Button variant="secondary" size="sm" onClick={() => setShowBulkUpload(true)}>📤 Bulk Upload</Button>
           <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>+ Add User</Button>
         </div>
       </div>
@@ -233,7 +235,65 @@ export function UserManagementPage() {
           )}
         </div>
       )}
+
+      <BulkUploadModal open={showBulkUpload} onClose={() => setShowBulkUpload(false)} />
     </AppShell>
+  )
+}
+
+function BulkUploadModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handleUpload = () => {
+    if (!file) return
+    setUploading(true)
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (res) => {
+        try {
+          const users = (res.data as any[]).map(row => ({
+            email: row.email,
+            password: row.password,
+            full_name: row.full_name,
+            role: row.role || 'student',
+            phone: row.phone || undefined,
+            student_profile: row.role === 'instructor' || row.role === 'admin' ? undefined : {
+              roll_number: row.roll_number || undefined,
+              department: row.department || undefined,
+            },
+          }))
+          await usersApi.bulkCreate(users)
+          toast.success(`${users.length} users uploaded!`)
+          qc.invalidateQueries({ queryKey: ['users'] })
+          setFile(null)
+          onClose()
+        } catch {
+          toast.error('Bulk upload failed — check CSV format')
+        } finally {
+          setUploading(false)
+        }
+      },
+    })
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Bulk Upload Users"
+      footer={<>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" loading={uploading} disabled={!file} onClick={handleUpload}>Upload</Button>
+      </>}
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500">
+          CSV columns: <code>email, password, full_name, role, phone, roll_number, department</code>
+          <br />(role: student / instructor / admin — roll_number & department apply to students)
+        </p>
+        <input type="file" accept=".csv" onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} className="input" />
+      </div>
+    </Modal>
   )
 }
 

@@ -3,13 +3,17 @@ ExamDesk — Results Routes
 GET /results/me                   student's own results
 GET /results/{result_id}          single result detail
 GET /results/exam/{exam_id}       all results for an exam (instructor/admin)
+GET /results/exam/{exam_id}/export  CSV export of results for an exam (instructor/admin)
 POST /results/{result_id}/publish (instructor/admin)
 """
 
+import csv
+import io
 from uuid import UUID
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +24,7 @@ from models import (
     Exam,
     ExamAttempt,
     Question,
+    User,
 )
 from schemas import (
     DetailedResultResponse,
@@ -112,6 +117,65 @@ async def exam_results(
         page=page,
         size=size,
         pages=(total + size - 1) // size,
+    )
+
+
+@router.get("/exam/{exam_id}/export")
+async def export_exam_results_csv(
+    exam_id: UUID,
+    current_user: CurrentUser,
+    db: DB,
+):
+    if current_user.role.value not in ("instructor", "admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    exam = await db.get(Exam, exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    query = (
+        select(Result)
+        .where(Result.exam_id == exam_id)
+        .order_by(Result.obtained_marks.desc())
+    )
+    results = (await db.execute(query)).scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Rank", "Student Name", "Roll Number", "Obtained Marks", "Total Marks",
+        "Percentage", "Status", "Correct", "Wrong", "Published", "Date",
+    ])
+
+    for i, r in enumerate(results, start=1):
+        sp = await db.get(StudentProfile, r.student_id)
+        student_name, roll_number = "", ""
+        if sp:
+            user = await db.get(User, sp.user_id)
+            student_name = user.full_name if user else ""
+            roll_number = sp.roll_number or ""
+
+        writer.writerow([
+            r.rank or i,
+            student_name,
+            roll_number,
+            r.obtained_marks,
+            r.total_marks,
+            f"{r.percentage:.2f}",
+            "Pass" if r.is_passed else "Fail",
+            r.correct_answers,
+            r.wrong_answers,
+            "Yes" if r.is_published else "No",
+            r.created_at.strftime("%Y-%m-%d %H:%M"),
+        ])
+
+    output.seek(0)
+    filename = f"{exam.title.replace(' ', '_')}_results.csv"
+
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

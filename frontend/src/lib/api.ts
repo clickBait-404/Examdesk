@@ -76,6 +76,9 @@ export const questionsApi = {
     api.put<Question>(`/questions/${id}`, data).then(r => r.data),
 
   delete: (id: string) => api.delete(`/questions/${id}`),
+
+  bulkImport: (questions: unknown[]) =>
+    api.post('/questions/bulk-import', { questions }).then(r => r.data),
 }
 
 // ─── Exams ─────────────────────────────────────────────────────────────────
@@ -128,6 +131,9 @@ export const resultsApi = {
   examResults: (examId: string, params?: { page?: number; size?: number }) =>
     api.get<Paginated<Result>>(`/results/exam/${examId}`, { params }).then(r => r.data),
 
+  exportCsv: (examId: string) =>
+    api.get(`/results/exam/${examId}/export`, { responseType: 'blob' }).then(r => r.data),
+
   publish: (id: string) => api.post(`/results/${id}/publish`),
 
   publishAll: (examId: string) => api.post(`/results/exam/${examId}/publish-all`),
@@ -138,6 +144,7 @@ export const analyticsApi = {
   student: () => api.get<StudentAnalytics>('/analytics/student/me').then(r => r.data),
   instructor: () => api.get<InstructorAnalytics>('/analytics/instructor').then(r => r.data),
   admin: () => api.get<AdminAnalytics>('/analytics/admin').then(r => r.data),
+  exportReport: () => api.get('/analytics/admin/export', { responseType: 'blob' }).then(r => r.data),
 }
 
 // ─── Leaderboard ───────────────────────────────────────────────────────────
@@ -166,5 +173,6 @@ export const certificatesApi = {
 export const auditApi = {
   list: (params?: { page?: number; size?: number; action?: string }) =>
     api.get<Paginated<AuditLog>>('/audit-logs', { params }).then(r => r.data),
+
+  exportCsv: () => api.get('/audit-logs/export', { responseType: 'blob' }).then(r => r.data),
 }
-  

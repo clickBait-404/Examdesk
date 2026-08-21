@@ -1,3 +1,5 @@
+# Python
+backend/venv/
 backend/venv/
 **/__pycache__/
 *.pyc
@@ -10,3 +12,18 @@ frontend/.env
 Thumbs.db
 .vscode/
 .idea/
+backend/.env
+backend/uploads/
+
+# Node.js
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

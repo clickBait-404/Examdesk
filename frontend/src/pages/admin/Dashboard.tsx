@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { analyticsApi, examsApi, auditApi } from '@/lib/api'
 import { AppShell } from '@/components/layout/AppShell'
 import { StatCard, Card, CardHeader, StatusBadge, PageLoader, Button, Badge, ProgressBar } from '@/components/ui'
@@ -7,6 +9,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { format } from 'date-fns'
 
 export default function AdminDashboard() {
+  const [isExporting, setIsExporting] = useState(false)
+
   const { data: analytics, isLoading: aLoad } = useQuery({
     queryKey: ['analytics', 'admin'],
     queryFn: analyticsApi.admin,
@@ -21,6 +25,25 @@ export default function AdminDashboard() {
     queryKey: ['audit-logs', 'recent'],
     queryFn: () => auditApi.list({ size: 10 }),
   })
+
+  const handleExportReport = async () => {
+    setIsExporting(true)
+    try {
+      const blob = await analyticsApi.exportReport()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'admin_report.csv'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to export report')
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   if (aLoad || eLoad) return <AppShell title="Admin Console"><PageLoader /></AppShell>
 
@@ -39,7 +62,7 @@ export default function AdminDashboard() {
           <p className="text-sm text-gray-500 mt-0.5">Institute-wide examination management</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm">📊 Export Report</Button>
+          <Button variant="secondary" size="sm" loading={isExporting} onClick={handleExportReport}>📊 Export Report</Button>
           <Link to="/exams/create"><Button variant="primary" size="sm">+ New Exam</Button></Link>
         </div>
       </div>
