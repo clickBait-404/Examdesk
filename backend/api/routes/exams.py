@@ -67,6 +67,20 @@ async def _get_instructor_profile_id(user, db) -> UUID:
     return profile.id
 
 
+async def _require_exam_owner(exam: Exam, current_user, db) -> None:
+    """
+    Enforces that only an admin, or the instructor who owns this exam,
+    can modify it. Without this, any authenticated instructor/admin
+    role-check alone would still let one instructor edit another
+    instructor's exam.
+    """
+    if current_user.role.value == "admin":
+        return
+    owner_instructor_id = await _get_instructor_profile_id(current_user, db)
+    if exam.instructor_id != owner_instructor_id:
+        raise HTTPException(status_code=403, detail="You do not own this exam")
+
+
 # ─── List Exams ────────────────────────────────────────────────────────────
 
 @router.get("", response_model=PaginatedResponse)
@@ -198,8 +212,9 @@ async def get_exam(exam_id: UUID, current_user: CurrentUser, db: DB):
 # ─── Update Exam ───────────────────────────────────────────────────────────
 
 @router.put("/{exam_id}", response_model=ExamResponse)
-async def update_exam(exam_id: UUID, payload: ExamUpdate, current_user: CurrentUser, db: DB):
+async def update_exam(exam_id: UUID, payload: ExamUpdate, current_user: RequireInstructor, db: DB):
     exam = await _get_exam_or_404(exam_id, db)
+    await _require_exam_owner(exam, current_user, db)
 
     if exam.status == ExamStatus.live:
         raise HTTPException(status_code=400, detail="Cannot edit a live exam")
@@ -217,8 +232,9 @@ async def update_exam(exam_id: UUID, payload: ExamUpdate, current_user: CurrentU
 # ─── Delete Exam ───────────────────────────────────────────────────────────
 
 @router.delete("/{exam_id}", response_model=MessageResponse)
-async def delete_exam(exam_id: UUID, current_user: CurrentUser, db: DB):
+async def delete_exam(exam_id: UUID, current_user: RequireInstructor, db: DB):
     exam = await _get_exam_or_404(exam_id, db)
+    await _require_exam_owner(exam, current_user, db)
     if exam.status == ExamStatus.live:
         raise HTTPException(status_code=400, detail="Cannot delete a live exam")
     await db.delete(exam)
@@ -234,6 +250,7 @@ async def publish_exam(exam_id: UUID, current_user: CurrentUser, db: DB):
         raise HTTPException(status_code=403, detail="Access denied")
 
     exam = await _get_exam_or_404(exam_id, db)
+    await _require_exam_owner(exam, current_user, db)
     if exam.status != ExamStatus.draft:
         raise HTTPException(status_code=400, detail=f"Cannot publish exam with status '{exam.status.value}'")
 
