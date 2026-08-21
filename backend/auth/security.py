@@ -5,7 +5,7 @@ Token creation, verification, and password hashing.
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -44,16 +44,36 @@ def create_access_token(
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_refresh_token(subject: str, role: str) -> str:
+def create_refresh_token(
+    subject: str,
+    role: str,
+    family_id: Optional[str] = None,
+) -> tuple[str, dict]:
+    """
+    Issues a refresh token carrying a unique `jti` (token id) and a
+    `family_id` shared across every token descended from the same
+    original login. The caller is responsible for persisting a
+    RefreshToken row for the returned jti — the token itself is
+    stateless, but tracking issued jtis in the DB is what makes
+    rotation (revoking the old one) and reuse-detection possible.
+
+    Returns (encoded_jwt, {"jti": ..., "family_id": ..., "expires_at": ...})
+    so the caller can store it without re-decoding the token.
+    """
+    jti = str(uuid4())
+    family_id = family_id or str(uuid4())
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": str(subject),
         "role": role,
         "type": "refresh",
+        "jti": jti,
+        "family_id": family_id,
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return token, {"jti": jti, "family_id": family_id, "expires_at": expire}
 
 
 def create_password_reset_token(email: str) -> str:
