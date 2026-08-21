@@ -9,6 +9,15 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Endpoints where a 401 means "invalid credentials", not "session expired" —
+// these should never trigger the refresh-token flow or a redirect.
+const AUTH_ENDPOINTS_WITHOUT_REFRESH = ['/auth/login', '/auth/register', '/auth/refresh']
+
+function isAuthEndpoint(url?: string) {
+  if (!url) return false
+  return AUTH_ENDPOINTS_WITHOUT_REFRESH.some((path) => url.includes(path))
+}
+
 // ── Request interceptor: attach access token ───────────────────────────────
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('access_token')
@@ -32,7 +41,11 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
-    if (error.response?.status === 401 && !original._retry) {
+    if (
+      error.response?.status === 401 &&
+      !original._retry &&
+      !isAuthEndpoint(original.url)
+    ) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -41,10 +54,8 @@ api.interceptors.response.use(
           return api(original)
         })
       }
-
       original._retry = true
       isRefreshing = true
-
       const refreshToken = localStorage.getItem('refresh_token')
       if (!refreshToken) {
         isRefreshing = false
@@ -52,7 +63,6 @@ api.interceptors.response.use(
         window.location.href = '/login'
         return Promise.reject(error)
       }
-
       try {
         const { data } = await axios.post(`${BASE_URL}/auth/refresh`, {
           refresh_token: refreshToken,
@@ -73,7 +83,8 @@ api.interceptors.response.use(
       }
     }
 
-    // Show user-friendly errors
+    // Show user-friendly errors (skip 401s from login/register — those pages
+    // already show their own "Invalid email or password" / detail toast)
     if (error.response?.status !== 401) {
       const detail = (error.response?.data as { detail?: string })?.detail
       if (detail && error.response?.status !== 422) {
@@ -86,4 +97,3 @@ api.interceptors.response.use(
 )
 
 export default api
-  
