@@ -18,6 +18,7 @@ from models import (
     Notification, NotificationType,
 )
 from utils.certificate import generate_verification_code
+from database.redis_client import get_redis
 
 
 async def grade_attempt(attempt_id: UUID, db: AsyncSession) -> Result:
@@ -261,6 +262,14 @@ async def _update_rankings(exam_id: UUID, db: AsyncSession):
         # Update rank on result
         await db.execute(update(Result).where(Result.id == res.id).values(rank=rank))
 
+    # ── Invalidate cached leaderboard so the next read reflects new rankings ──
+    redis_client = get_redis()
+    if redis_client is not None:
+        try:
+            await redis_client.delete(f"leaderboard:exam:{exam_id}")
+        except Exception:
+            pass  # cache invalidation failure shouldn't break grading
+
 
 async def _issue_certificate(result: Result, db: AsyncSession):
     """Issue a certificate for a passed exam result."""
@@ -286,4 +295,3 @@ async def _issue_certificate(result: Result, db: AsyncSession):
             message=f"Your certificate has been issued. Verification code: {code}",
             notification_metadata={"certificate_verification_code": code},
         ))
-  

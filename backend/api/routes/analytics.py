@@ -21,6 +21,7 @@ GET  /certificates/verify/{code}
 
 import csv
 import io
+import json
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
@@ -29,10 +30,13 @@ from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 
 from api.dependencies import CurrentUser, DB
+from database.redis_client import get_redis
 from models import (
     Result, ExamAttempt, Exam, StudentProfile, InstructorProfile,
     Ranking, Notification, Certificate, User,
 )
+
+LEADERBOARD_CACHE_TTL_SECONDS = 60
 from schemas import (
     AdminAnalytics, CertificateResponse, CertificateVerifyResponse,
     InstructorAnalytics, LeaderboardEntry, LeaderboardResponse,
@@ -229,6 +233,18 @@ leaderboard_router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
 
 @leaderboard_router.get("/{exam_id}", response_model=LeaderboardResponse)
 async def exam_leaderboard(exam_id: UUID, current_user: CurrentUser, db: DB):
+    cache_key = f"leaderboard:exam:{exam_id}"
+    redis_client = get_redis()
+
+    # ── Try cache first (best-effort — if Redis is down, fall through to DB) ──
+    if redis_client is not None:
+        try:
+            cached = await redis_client.get(cache_key)
+            if cached is not None:
+                return LeaderboardResponse.model_validate(json.loads(cached))
+        except Exception:
+            pass  # cache miss/error should never break the request
+
     exam = await db.get(Exam, exam_id)
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
@@ -255,12 +271,25 @@ async def exam_leaderboard(exam_id: UUID, current_user: CurrentUser, db: DB):
         for r, sp, u in rows
     ]
 
-    return LeaderboardResponse(
+    response = LeaderboardResponse(
         exam_id=exam_id,
         exam_title=exam.title,
         entries=entries,
         total_participants=len(entries),
     )
+
+    # ── Populate cache for next request (best-effort) ──
+    if redis_client is not None:
+        try:
+            await redis_client.set(
+                cache_key,
+                response.model_dump_json(),
+                ex=LEADERBOARD_CACHE_TTL_SECONDS,
+            )
+        except Exception:
+            pass
+
+    return response
 
 
 # ─── Notifications ─────────────────────────────────────────────────────────

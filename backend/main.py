@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from config import settings
 from database.session import create_tables
+from database.redis_client import connect_redis, disconnect_redis
 from middleware.logging import GlobalExceptionMiddleware, RequestLoggingMiddleware
 
 # ── Routers ────────────────────────────────────────────────────────────────
@@ -45,7 +46,9 @@ async def lifespan(app: FastAPI):
     if settings.ENVIRONMENT == "development":
         await create_tables()
         logger.info("✅ Database tables verified")
+    await connect_redis()
     yield
+    await disconnect_redis()
     logger.info("🛑 ExamDesk shutting down...")
 
 
