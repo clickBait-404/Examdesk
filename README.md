@@ -3,8 +3,6 @@
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
-![Docker](https://img.shields.io/badge/Docker-Compose-blue)
-
 
 A production-ready Online Examination System built using **FastAPI**, **React**, **PostgreSQL**, **Redis**, and **Docker**.
 
@@ -34,9 +32,7 @@ The platform supports Students, Instructors, and Administrators with secure auth
 - SQLAlchemy Async
 - PostgreSQL
 - Redis
-- Alembic
 - JWT Authentication
-- AsyncPG
 
 
 ## Frontend
@@ -44,14 +40,7 @@ The platform supports Students, Instructors, and Administrators with secure auth
 - React
 - TypeScript
 - TailwindCSS
-- Axios
-- React Router
 
-## DevOps
-
-- Docker
-- Docker Compose
-- GitHub
 
 ---
 
@@ -59,10 +48,7 @@ The platform supports Students, Instructors, and Administrators with secure auth
 
 ```text
 Examdesk/
-│
-├── .github/
-│   └── workflows/
-│       └── ci.yml
+│     
 │
 ├── backend/
 │   ├── api/
@@ -131,22 +117,6 @@ Swagger
 
 ```
 http://localhost:8000/api/docs
-```
-
----
-
-# Run Backend Tests
-
-```bash
-docker compose exec backend pytest -v
-```
-
-Result
-
-```
-========================
-20 PASSED
-========================
 ```
 
 ---
