@@ -17,19 +17,23 @@ _redis_client: Optional[redis.Redis] = None
 
 
 async def connect_redis() -> None:
-    """Create the Redis connection pool. Call once on app startup."""
+    """Create the Redis connection pool. Call once on app startup.
+    Never raises — a missing/invalid REDIS_URL or unreachable Redis
+    should degrade to "no cache", not crash the app.
+    """
     global _redis_client
-    _redis_client = redis.from_url(
-        settings.REDIS_URL,
-        decode_responses=True,
-        socket_connect_timeout=5,
-        socket_timeout=5,
-    )
     try:
+        _redis_client = redis.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
         await _redis_client.ping()
         logger.info("✅ Redis connected")
     except Exception as e:
-        logger.warning(f"⚠️  Redis connection failed, continuing without cache: {e}")
+        _redis_client = None
+        logger.warning(f"⚠️  Redis unavailable, continuing without cache: {e}")
 
 
 async def disconnect_redis() -> None:
