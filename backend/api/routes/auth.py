@@ -10,7 +10,7 @@ POST /auth/change-password
 GET  /auth/me
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -64,7 +64,9 @@ async def _build_token_response(
     )
 
     # Persist the issued refresh token so it can be looked up, revoked
-    # on rotation, and checked for reuse.
+    # on rotation, and checked for reuse. last_used_at defaults to now()
+    # via the model's server_default and drives the idle-timeout check
+    # in /refresh below.
     db.add(RefreshToken(
         user_id=user.id,
         jti=meta["jti"],
@@ -178,6 +180,8 @@ async def register(payload: UserCreate, db: DB):
     user = result.scalar_one()
 
     return UserResponse.model_validate(user)
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, request: Request, db: DB):
     result = await db.execute(select(User).where(User.email == payload.email.lower()))
@@ -231,6 +235,24 @@ async def refresh_token(payload: RefreshTokenRequest, db: DB):
         # A syntactically valid, signed token that we never issued (or
         # that's already been deleted) — treat as invalid.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+
+    # NEW: server-side idle timeout. Independent of the frontend's
+    # useIdleLogout hook — enforced here so it can't be bypassed by
+    # disabling JS or editing client state directly. If this refresh
+    # token's family hasn't been used to refresh in REFRESH_IDLE_TIMEOUT_MINUTES,
+    # kill the whole family and force a fresh login.
+    idle_limit = timedelta(minutes=settings.REFRESH_IDLE_TIMEOUT_MINUTES)
+    if datetime.now(timezone.utc) - stored.last_used_at > idle_limit:
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == stored.family_id)
+            .values(revoked=True)
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired due to inactivity. Please log in again.",
+        )
 
     if stored.revoked:
         # This exact token was already used once before — someone is
