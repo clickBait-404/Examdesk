@@ -6,6 +6,7 @@ import { Avatar } from '@/components/ui'
 import { clsx } from 'clsx'
 import type { Role } from '@/types'
 import { useUnreadCount } from '@/hooks/useNotifications'
+import { useIdleLogout } from '@/hooks/useIdleLogout'
 
 // ─── Nav config per role ───────────────────────────────────────────────────
 const NAV: Record<Role, { section: string; items: { to: string; icon: string; label: string }[] }[]> = {
@@ -156,6 +157,11 @@ function Topbar({ title }: { title?: string }) {
 // ─── App Shell ─────────────────────────────────────────────────────────────
 export function AppShell({ children, title }: { children: ReactNode; title?: string }) {
   const { user } = useAuthStore()
+  // NEW: logs the user out after a period of inactivity. AppShell only
+  // ever renders once someone's authenticated (see the early return
+  // below), so this never runs on the public login/register pages.
+  useIdleLogout()
+
   if (!user) return null
 
   return (
