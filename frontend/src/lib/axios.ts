@@ -19,8 +19,9 @@ function isAuthEndpoint(url?: string) {
 }
 
 // ── Request interceptor: attach access token ───────────────────────────────
+// CHANGED: localStorage -> sessionStorage so tokens don't survive a closed browser.
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = localStorage.getItem('access_token')
+  const token = sessionStorage.getItem('access_token')
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -54,28 +55,34 @@ api.interceptors.response.use(
           return api(original)
         })
       }
+
       original._retry = true
       isRefreshing = true
-      const refreshToken = localStorage.getItem('refresh_token')
+
+      // CHANGED: localStorage -> sessionStorage
+      const refreshToken = sessionStorage.getItem('refresh_token')
       if (!refreshToken) {
         isRefreshing = false
-        localStorage.clear()
+        sessionStorage.clear()
         window.location.href = '/login'
         return Promise.reject(error)
       }
+
       try {
         const { data } = await axios.post(`${BASE_URL}/auth/refresh`, {
           refresh_token: refreshToken,
         })
-        localStorage.setItem('access_token', data.access_token)
-        localStorage.setItem('refresh_token', data.refresh_token)
+        // CHANGED: localStorage -> sessionStorage
+        sessionStorage.setItem('access_token', data.access_token)
+        sessionStorage.setItem('refresh_token', data.refresh_token)
         api.defaults.headers.common.Authorization = `Bearer ${data.access_token}`
         processQueue(null, data.access_token)
         original.headers.Authorization = `Bearer ${data.access_token}`
         return api(original)
       } catch (refreshError) {
         processQueue(refreshError, null)
-        localStorage.clear()
+        // CHANGED: localStorage -> sessionStorage
+        sessionStorage.clear()
         window.location.href = '/login'
         return Promise.reject(refreshError)
       } finally {
@@ -91,7 +98,6 @@ api.interceptors.response.use(
         toast.error(detail)
       }
     }
-
     return Promise.reject(error)
   }
 )
