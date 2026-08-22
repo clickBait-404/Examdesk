@@ -135,6 +135,14 @@ class RefreshToken(Base, UUIDMixin, TimestampMixin):
     each refresh consumes (revokes) the old token and issues a new
     one. If a revoked token is presented again, that's a signal it
     was stolen and reused — the whole family is revoked.
+
+    last_used_at drives the server-side idle timeout in the /auth/refresh
+    route: if a family hasn't been refreshed within
+    settings.REFRESH_IDLE_TIMEOUT_MINUTES, it's revoked and the user is
+    forced to log in again. It defaults to creation time and doesn't
+    need to be touched anywhere else — each successful refresh issues a
+    brand-new RefreshToken row (via _build_token_response), which gets
+    its own fresh last_used_at automatically.
     """
     __tablename__ = "refresh_tokens"
 
@@ -143,6 +151,7 @@ class RefreshToken(Base, UUIDMixin, TimestampMixin):
     family_id = Column(String(64), nullable=False, index=True)
     revoked = Column(Boolean, default=False, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="refresh_tokens")
 
