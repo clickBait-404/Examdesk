@@ -124,40 +124,7 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
-        {/* Live exam monitoring */}
-        <Card>
-          <CardHeader
-            title="Live Exam Monitoring"
-            action={<Badge variant="green">● {liveExams.length} live</Badge>}
-          />
-          {liveExams.length === 0 ? (
-            <div className="py-6 text-center text-sm text-gray-400">No exams in progress</div>
-          ) : (
-            <div className="space-y-3">
-              {liveExams.map(exam => (
-                <div key={exam.id} className="border border-gray-100 rounded-xl p-3 hover:border-brand-200 transition-colors">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="font-medium text-sm text-gray-800 truncate max-w-[60%]">{exam.title}</div>
-                    <StatusBadge status={exam.status} />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">{exam.subject?.name || 'General'}</span>
-                    <Link to={`/exam-monitoring`}>
-                      <Button variant="ghost" size="sm">Monitor →</Button>
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="mt-3">
-            <Link to="/exam-monitoring" className="text-xs text-brand-600 hover:underline font-medium">
-              View full monitoring dashboard →
-            </Link>
-          </div>
-        </Card>
-
+      <div className="mb-5">
         {/* Recent audit log */}
         <Card>
           <CardHeader

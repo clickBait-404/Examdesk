@@ -16,8 +16,6 @@ import QuestionBankPage from '@/pages/QuestionBankPage'
 import { AnalyticsPage, LeaderboardPage } from '@/pages/AnalyticsLeaderboard'
 import { ExamsListPage, ExamResultsPage, SubjectsPage, AuditLogsPage } from '@/pages/OtherPages'
 import { CertificatesPage, ResultDetailPage } from '@/pages/CertificatesAndResults'
-import { AppShell } from '@/components/layout/AppShell'
-import { EmptyState } from '@/components/ui'
 
 function RequireAuth({ allowedRoles }: { allowedRoles?: Role[] }) {
   const { isAuthenticated, user } = useAuthStore()
@@ -49,18 +47,6 @@ function DashboardRedirect() {
     default:
       return <AdminDashboard />
   }
-}
-
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <AppShell title={title}>
-      <EmptyState
-        icon="🚧"
-        title={title}
-        description="This page is still under development."
-      />
-    </AppShell>
-  )
 }
 
 const router = createBrowserRouter([
@@ -109,7 +95,6 @@ const router = createBrowserRouter([
         children: [
           { path: '/users', element: <UserManagementPage /> },
           { path: '/audit-logs', element: <AuditLogsPage /> },
-          { path: '/exam-monitoring', element: <PlaceholderPage title="Live Exam Monitoring" /> },
         ],
       },
 
