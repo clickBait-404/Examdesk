@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # NEW: how long a refresh-token family can go without being used
+    # before /auth/refresh revokes it and forces a fresh login.
+    REFRESH_IDLE_TIMEOUT_MINUTES: int = 20
     # Password Reset
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
     # CORS
