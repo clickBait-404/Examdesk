@@ -12,7 +12,7 @@ POST   /exams/{id}/start       (student)
 """
 
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 from uuid import UUID
 
@@ -39,6 +39,52 @@ router = APIRouter(prefix="/exams", tags=["Exams"])
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
+
+def _exam_end_time(exam: Exam) -> datetime | None:
+    """
+    The moment an exam should stop being considered 'live', regardless
+    of whether any attempt has actually been submitted. Prefers the
+    explicit scheduled_end if set; otherwise derives it from
+    scheduled_start + duration_minutes. Returns None if there's not
+    enough info to know (e.g. no scheduled_start at all).
+    """
+    if exam.scheduled_end:
+        return exam.scheduled_end
+    if exam.scheduled_start:
+        return exam.scheduled_start + timedelta(minutes=exam.duration_minutes)
+    return None
+
+
+async def _auto_complete_stale_exams(db) -> None:
+    """
+    The exam lifecycle (draft -> published -> live -> completed) only
+    ever advances on explicit actions: publish, a student starting an
+    attempt, or a manual update. Nothing previously checked the clock,
+    so an exam whose scheduled window had already passed stayed stuck
+    on 'live' or 'published' forever — which is why the dashboard kept
+    showing exams as live long after their scheduled time.
+
+    This runs a lightweight check before every list/get: find
+    published/live exams whose end time has passed, and flip them to
+    completed. It's called inline (not a background job) so the fix
+    applies immediately on the next request without needing a
+    scheduler — cheap enough since it only touches exams that are
+    already overdue.
+    """
+    candidates_result = await db.execute(
+        select(Exam).where(Exam.status.in_([ExamStatus.published, ExamStatus.live]))
+    )
+    candidates = candidates_result.scalars().all()
+
+    now = datetime.now(timezone.utc)
+    stale_ids = [e.id for e in candidates if (end := _exam_end_time(e)) and end < now]
+
+    if stale_ids:
+        await db.execute(
+            update(Exam).where(Exam.id.in_(stale_ids)).values(status=ExamStatus.completed)
+        )
+        await db.commit()
+
 
 async def _get_exam_or_404(exam_id: UUID, db) -> Exam:
     result = await db.execute(
@@ -93,6 +139,8 @@ async def list_exams(
     subject_id: UUID = Query(None),
     search: str = Query(None),
 ):
+    await _auto_complete_stale_exams(db)
+
     query = select(Exam).options(selectinload(Exam.subject))
 
     # Students only see published/live/completed
@@ -200,6 +248,8 @@ async def create_exam(payload: ExamCreate, current_user: CurrentUser, db: DB):
 
 @router.get("/{exam_id}", response_model=ExamResponse)
 async def get_exam(exam_id: UUID, current_user: CurrentUser, db: DB):
+    await _auto_complete_stale_exams(db)
+
     exam = await _get_exam_or_404(exam_id, db)
 
     if current_user.role.value == "student":
@@ -336,6 +386,12 @@ async def start_exam(exam_id: UUID, current_user: CurrentUser, db: DB, request=N
     exam = await _get_exam_or_404(exam_id, db)
     if exam.status not in (ExamStatus.published, ExamStatus.live):
         raise HTTPException(status_code=400, detail="Exam is not available")
+
+    end_time = _exam_end_time(exam)
+    if end_time and datetime.now(timezone.utc) > end_time:
+        await db.execute(update(Exam).where(Exam.id == exam_id).values(status=ExamStatus.completed))
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Exam window has closed")
 
     from models import StudentProfile
     sp_result = await db.execute(select(StudentProfile).where(StudentProfile.user_id == current_user.id))
