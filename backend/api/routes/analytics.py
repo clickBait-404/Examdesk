@@ -22,6 +22,8 @@ GET  /certificates/verify/{code}
 import csv
 import io
 import json
+import time
+import logging
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
@@ -44,7 +46,7 @@ from schemas import (
 )
 
 # ─── Analytics ─────────────────────────────────────────────────────────────
-
+logger = logging.getLogger("examdesk")
 analytics_router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
@@ -233,31 +235,68 @@ leaderboard_router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
 
 @leaderboard_router.get("/{exam_id}", response_model=LeaderboardResponse)
 async def exam_leaderboard(exam_id: UUID, current_user: CurrentUser, db: DB):
+    request_start = time.perf_counter()
+
     cache_key = f"leaderboard:exam:{exam_id}"
     redis_client = get_redis()
 
-    # ── Try cache first (best-effort — if Redis is down, fall through to DB) ──
+    # ── Try Redis first ──────────────────────────────────────────────
     if redis_client is not None:
         try:
+            cache_start = time.perf_counter()
+
             cached = await redis_client.get(cache_key)
+
+            cache_time_ms = (time.perf_counter() - cache_start) * 1000
+
             if cached is not None:
-                return LeaderboardResponse.model_validate(json.loads(cached))
-        except Exception:
-            pass  # cache miss/error should never break the request
+                total_time_ms = (time.perf_counter() - request_start) * 1000
+
+                logger.info(
+                    f"LEADERBOARD CACHE HIT | "
+                    f"Redis: {cache_time_ms:.2f} ms | "
+                    f"Total: {total_time_ms:.2f} ms"
+                )
+
+                return LeaderboardResponse.model_validate(
+                    json.loads(cached)
+                )
+
+        except Exception as e:
+            logger.warning(
+                f"Leaderboard Redis GET failed: {e}"
+            )
+
+    # ── Cache MISS → PostgreSQL ──────────────────────────────────────
+    db_start = time.perf_counter()
 
     exam = await db.get(Exam, exam_id)
+
     if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Exam not found"
+        )
 
     rankings_q = await db.execute(
         select(Ranking, StudentProfile, User)
-        .join(StudentProfile, Ranking.student_id == StudentProfile.id)
-        .join(User, StudentProfile.user_id == User.id)
+        .join(
+            StudentProfile,
+            Ranking.student_id == StudentProfile.id
+        )
+        .join(
+            User,
+            StudentProfile.user_id == User.id
+        )
         .where(Ranking.exam_id == exam_id)
         .order_by(Ranking.rank)
     )
+
     rows = rankings_q.all()
 
+    db_time_ms = (time.perf_counter() - db_start) * 1000
+
+    # ── Build response ───────────────────────────────────────────────
     entries = [
         LeaderboardEntry(
             rank=r.rank,
@@ -265,7 +304,10 @@ async def exam_leaderboard(exam_id: UUID, current_user: CurrentUser, db: DB):
             roll_number=sp.roll_number,
             department=sp.department,
             score=r.score,
-            percentage=round(r.score / exam.total_marks * 100, 2),
+            percentage=round(
+                r.score / exam.total_marks * 100,
+                2
+            ),
             percentile=r.percentile,
         )
         for r, sp, u in rows
@@ -278,7 +320,7 @@ async def exam_leaderboard(exam_id: UUID, current_user: CurrentUser, db: DB):
         total_participants=len(entries),
     )
 
-    # ── Populate cache for next request (best-effort) ──
+    # ── Store in Redis ────────────────────────────────────────────────
     if redis_client is not None:
         try:
             await redis_client.set(
@@ -286,8 +328,19 @@ async def exam_leaderboard(exam_id: UUID, current_user: CurrentUser, db: DB):
                 response.model_dump_json(),
                 ex=LEADERBOARD_CACHE_TTL_SECONDS,
             )
-        except Exception:
-            pass
+
+        except Exception as e:
+            logger.warning(
+                f"Leaderboard Redis SET failed: {e}"
+            )
+
+    total_time_ms = (time.perf_counter() - request_start) * 1000
+
+    logger.info(
+        f"LEADERBOARD CACHE MISS | "
+        f"DB: {db_time_ms:.2f} ms | "
+        f"Total: {total_time_ms:.2f} ms"
+    )
 
     return response
 
