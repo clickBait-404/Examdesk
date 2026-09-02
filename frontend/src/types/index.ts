@@ -102,6 +102,8 @@ export interface ExamSection {
   order_index: number
   marks: number
   time_limit_minutes?: number
+  marks_per_question?: number
+  question_ids?: string[]
 }
 
 export interface Exam {
