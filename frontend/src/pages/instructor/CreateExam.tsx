@@ -14,7 +14,7 @@ import { Card, Button, Input, Textarea, Select, Toggle } from '@/components/ui'
 import type { Question } from '@/types'
 
 const schema = z.object({
-  title: z.string().min(3, 'Title must be at least 3 characters'),
+  title: z.string().min(5, 'Title must be at least 5 characters'),
   description: z.string().optional(),
   instructions: z.string().optional(),
   duration_minutes: z.number().min(1).max(480),
@@ -27,6 +27,19 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 const STEPS = ['Basic Info', 'Questions', 'Settings', 'Proctoring', 'Review']
+
+// Maps each form field to the step (index) where the user can see/fix it.
+// Used to auto-navigate the user to the offending step on validation failure.
+const FIELD_STEP: Record<keyof FormData, number> = {
+  title: 0,
+  description: 0,
+  instructions: 0,
+  subject_id: 0,
+  scheduled_start: 0,
+  duration_minutes: 0,
+  total_marks: 0,
+  passing_marks: 0,
+}
 
 export default function CreateExamPage() {
   const navigate = useNavigate()
@@ -237,10 +250,7 @@ export default function CreateExamPage() {
         toast.success('Exam saved as draft!')
       }
 
-      // Single invalidation is sufficient — createMutation no longer
-      // duplicates this in its own onSuccess.
       qc.invalidateQueries({ queryKey: ['exams'] })
-
       navigate('/exams')
     } catch (error: any) {
       console.error('Exam submission failed:', error)
@@ -249,9 +259,22 @@ export default function CreateExamPage() {
     }
   }
 
+  /*
+   * On validation failure: jump the user to the step that owns the first
+   * invalid field (so they can actually see the inline error), and show
+   * the specific message instead of a generic "complete all fields" toast.
+   */
   const onValidationError = (label: string) => (formErrors: typeof errors) => {
     console.error(`${label} validation errors:`, formErrors)
-    toast.error('Please complete all required fields')
+
+    const firstErrorField = Object.keys(formErrors)[0] as keyof FormData | undefined
+    const firstMessage = firstErrorField ? formErrors[firstErrorField]?.message : undefined
+
+    if (firstErrorField && FIELD_STEP[firstErrorField] !== undefined) {
+      setStep(FIELD_STEP[firstErrorField])
+    }
+
+    toast.error(firstMessage || 'Please complete all required fields')
   }
 
   const watchData = watch()
@@ -282,11 +305,6 @@ export default function CreateExamPage() {
           </div>
         ))}
       </div>
-
-      {/* NOTE: the duplicate top-level "Publish Exam" button that previously
-          rendered on every step (outside the Card, outside step guards) has
-          been removed. Publishing is only available from the Review step
-          via the button in the bottom navigation. */}
 
       <Card className="max-w-3xl">
         {/* =========================================================
