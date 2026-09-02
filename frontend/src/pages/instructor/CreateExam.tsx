@@ -998,18 +998,15 @@ export default function CreateExamPage() {
                   </Button>
 
                   <Button
-                    type="submit"
-                    variant="primary"
-                    loading={
-                      createMutation.isPending ||
-                      publishMutation.isPending
-                    }
-                    disabled={
-                      selectedQuestionIds.length === 0
-                    }
-                  >
-                    🚀 Publish Exam
-                  </Button>
+  type="submit"
+  variant="primary"
+  loading={
+    createMutation.isPending ||
+    publishMutation.isPending
+  }
+>
+  🚀 Publish Exam
+</Button>
                 </>
               )}
 
