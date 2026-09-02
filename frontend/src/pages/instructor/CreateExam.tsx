@@ -150,10 +150,7 @@ export default function CreateExamPage() {
             return
           }
 
-          const response = await questionsApi.bulkImport(questions) as {
-            created: number
-            ids: string[]
-          }
+          const response = await questionsApi.bulkImport(questions)
 
           if (!response.ids || response.ids.length === 0) {
             toast.error(
