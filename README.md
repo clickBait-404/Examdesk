@@ -1,8 +1,5 @@
 # 🎓 ExamDesk – Full-Stack Online Examination Platform
 
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
 
 A production-ready Online Examination System built using **FastAPI**, **React**, **PostgreSQL**, **Redis**, and **Docker**.
 
