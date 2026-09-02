@@ -119,6 +119,7 @@ async def bulk_import_questions(payload: dict, current_user: CurrentUser, db: DB
 
     questions_data = payload.get("questions", [])
     created = 0
+    created_ids = []
 
     for q in questions_data:
         question = Question(
@@ -133,6 +134,7 @@ async def bulk_import_questions(payload: dict, current_user: CurrentUser, db: DB
         )
         db.add(question)
         await db.flush()
+        created_ids.append(str(question.id))
 
         for i, opt in enumerate(q.get("options", [])):
             db.add(QuestionOption(
@@ -151,7 +153,10 @@ async def bulk_import_questions(payload: dict, current_user: CurrentUser, db: DB
     ))
     await db.commit()
 
-    return {"created": created}
+    return {
+    "created": created,
+    "ids": created_ids,
+}
 
 
 @router.get("/{question_id}", response_model=QuestionResponse)
