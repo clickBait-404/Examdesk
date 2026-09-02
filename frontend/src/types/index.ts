@@ -96,7 +96,7 @@ export interface QuestionForStudent {
 export type ExamStatus = 'draft' | 'published' | 'live' | 'completed' | 'cancelled'
 
 export interface ExamSection {
-  id: string
+  id?: string
   name: string
   description?: string
   order_index: number
