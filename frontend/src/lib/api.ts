@@ -78,7 +78,8 @@ export const questionsApi = {
   delete: (id: string) => api.delete(`/questions/${id}`),
 
   bulkImport: (questions: unknown[]) =>
-    api.post('/questions/bulk-import', { questions }).then(r => r.data),
+  api.post<{ created: number; ids: string[] }>('/questions/bulk-import', { questions })
+    .then(r => r.data),
 }
 
 // ─── Exams ─────────────────────────────────────────────────────────────────
