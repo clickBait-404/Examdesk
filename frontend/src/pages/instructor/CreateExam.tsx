@@ -41,6 +41,23 @@ const FIELD_STEP: Record<keyof FormData, number> = {
   passing_marks: 0,
 }
 
+/*
+ * Convert a <input type="datetime-local"> value (a timezone-naive
+ * "YYYY-MM-DDTHH:mm" string representing the browser's LOCAL time)
+ * into a true UTC ISO string before it's sent to the backend.
+ *
+ * Without this, the naive string gets stored/echoed and later
+ * re-interpreted as UTC by some downstream renderer, silently
+ * shifting the displayed time by the viewer's UTC offset
+ * (e.g. 23:53 local becoming 5:23 AM the next day for IST users).
+ */
+function toUtcIso(localDatetimeValue?: string): string | undefined {
+  if (!localDatetimeValue) return undefined
+  const parsed = new Date(localDatetimeValue)
+  if (Number.isNaN(parsed.getTime())) return undefined
+  return parsed.toISOString()
+}
+
 export default function CreateExamPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -187,6 +204,8 @@ export default function CreateExamPage() {
 
   /*
    * Create the exam and attach the selected questions.
+   * scheduled_start is converted to UTC ISO here so the backend
+   * never receives a timezone-ambiguous string.
    */
   const createMutation = useMutation({
     mutationFn: (data: FormData) => {
@@ -195,6 +214,7 @@ export default function CreateExamPage() {
 
       return examsApi.create({
         ...data,
+        scheduled_start: toUtcIso(data.scheduled_start),
         ...settings,
         ...proctoring,
 
