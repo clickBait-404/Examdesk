@@ -35,7 +35,7 @@ const NAV: Record<Role, { section: string; items: { to: string; icon: string; la
     { section: 'Content', items: [
       { to: '/questions', icon: '🗄️', label: 'Question Bank' },
       { to: '/subjects',  icon: '📚', label: 'Subjects' },
-      { to: '/results',   icon: '📊', label: 'Results' },
+      { to: '/exams?status=completed', icon: '📊', label: 'Results' },
     ]},
     { section: 'Analytics', items: [
       { to: '/analytics', icon: '📈', label: 'Analytics' },
