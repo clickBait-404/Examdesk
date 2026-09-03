@@ -247,32 +247,81 @@ export function ResultDetailPage() {
             <CardHeader title="Question-wise Analysis" subtitle="Detailed breakdown of each answer" />
             <div className="space-y-2 mt-2">
               {result.question_wise.map((qw, i) => (
-                <div key={qw.question_id} className={`flex items-start gap-3 p-3 rounded-xl border ${
+                <div key={qw.question_id} className={`p-3 rounded-xl border ${
                   qw.is_correct === true ? 'bg-green-50 border-green-200' :
                   qw.is_correct === false ? 'bg-red-50 border-red-200' :
                   'bg-gray-50 border-gray-200'
                 }`}>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                    qw.is_correct === true ? 'bg-green-200 text-green-800' :
-                    qw.is_correct === false ? 'bg-red-200 text-red-700' :
-                    'bg-gray-200 text-gray-600'
-                  }`}>
-                    {i + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-700 line-clamp-2">{qw.question_text}</p>
-                  </div>
-                  <div className="flex-shrink-0 text-right">
-                    <div className={`text-xs font-semibold ${
-                      qw.is_correct === true ? 'text-green-700' :
-                      qw.is_correct === false ? 'text-red-600' : 'text-gray-500'
+                  <div className="flex items-start gap-3">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                      qw.is_correct === true ? 'bg-green-200 text-green-800' :
+                      qw.is_correct === false ? 'bg-red-200 text-red-700' :
+                      'bg-gray-200 text-gray-600'
                     }`}>
-                      {qw.is_correct === true ? '+' : qw.is_correct === false ? '' : '±'}{qw.marks_awarded ?? '—'}
+                      {i + 1}
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">
-                      {qw.is_correct === true ? 'Correct' : qw.is_correct === false ? 'Wrong' : 'Pending'}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-700">{qw.question_text}</p>
+                    </div>
+                    <div className="flex-shrink-0 text-right">
+                      <div className={`text-xs font-semibold ${
+                        qw.is_correct === true ? 'text-green-700' :
+                        qw.is_correct === false ? 'text-red-600' : 'text-gray-500'
+                      }`}>
+                        {qw.is_correct === true ? '+' : qw.is_correct === false ? '' : '±'}{qw.marks_awarded ?? '—'}
+                      </div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">
+                        {qw.is_correct === true ? 'Correct' : qw.is_correct === false ? 'Wrong' : 'Pending'}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Options with your pick vs. the correct one highlighted */}
+                  {qw.options.length > 0 && (
+                    <div className="mt-2.5 ml-9 space-y-1">
+                      {qw.options.map((opt, oi) => {
+                        const wasSelected =
+                          opt.id === qw.selected_option_id ||
+                          qw.selected_option_texts.includes(opt.text)
+                        return (
+                          <div
+                            key={opt.id}
+                            className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg border ${
+                              opt.is_correct
+                                ? 'bg-green-100 border-green-300 text-green-800 font-medium'
+                                : wasSelected
+                                ? 'bg-red-100 border-red-300 text-red-700 font-medium'
+                                : 'bg-white border-gray-200 text-gray-600'
+                            }`}
+                          >
+                            <span className="font-semibold">{String.fromCharCode(65 + oi)}.</span>
+                            <span className="flex-1">{opt.text}</span>
+                            {opt.is_correct && <span title="Correct answer">✓</span>}
+                            {wasSelected && !opt.is_correct && <span title="Your answer">✗</span>}
+                            {wasSelected && opt.is_correct && (
+                              <span className="text-[10px] text-green-700">(your answer)</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Text / subjective answers have no options to render */}
+                  {qw.options.length === 0 && (qw.text_answer || qw.correct_option_text) && (
+                    <div className="mt-2.5 ml-9 space-y-1 text-xs">
+                      <div className="text-gray-600">
+                        <span className="font-medium text-gray-500">Your answer: </span>
+                        {qw.text_answer || <span className="text-gray-400">Not attempted</span>}
+                      </div>
+                      {qw.correct_option_text && (
+                        <div className="text-green-700">
+                          <span className="font-medium text-green-600">Correct answer: </span>
+                          {qw.correct_option_text}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
