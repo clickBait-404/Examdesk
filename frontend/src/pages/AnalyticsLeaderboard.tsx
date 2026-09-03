@@ -131,7 +131,9 @@ export function LeaderboardPage() {
                         </td>
                         <td>
                           {entry.percentile != null && (
-                            <span className="text-xs text-purple-700 font-medium">Top {(100 - entry.percentile).toFixed(0)}%</span>
+                            <span className="text-xs text-purple-700 font-medium">
+                              Top {Math.max(1, Math.round(100 - entry.percentile))}%
+                            </span>
                           )}
                         </td>
                       </tr>
