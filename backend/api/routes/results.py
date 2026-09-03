@@ -18,6 +18,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from api.dependencies import CurrentUser, DB
+from database.redis_client import get_redis
 from models import (
     Result,
     StudentProfile,
@@ -34,6 +35,18 @@ from schemas import (
 )
 
 router = APIRouter(prefix="/results", tags=["Results"])
+
+
+async def _invalidate_leaderboard_cache(exam_id: UUID) -> None:
+    """Drop the cached leaderboard so newly published/ranked results show up
+    immediately instead of waiting out the TTL."""
+    redis_client = get_redis()
+    if redis_client is None:
+        return
+    try:
+        await redis_client.delete(f"leaderboard:exam:{exam_id}")
+    except Exception:
+        pass
 
 
 @router.get("/me", response_model=PaginatedResponse)
@@ -308,6 +321,14 @@ async def publish_result(
 
     await db.commit()
 
+    from services.grading import _update_rankings
+
+    await _update_rankings(res.exam_id, db)
+
+    await db.commit()
+
+    await _invalidate_leaderboard_cache(res.exam_id)
+
     return MessageResponse(message="Result published")
 
 
@@ -341,5 +362,7 @@ async def publish_all_results(
     await _update_rankings(exam_id, db)
 
     await db.commit()
+
+    await _invalidate_leaderboard_cache(exam_id)
 
     return MessageResponse(message="All results published")
