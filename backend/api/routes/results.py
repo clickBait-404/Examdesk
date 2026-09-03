@@ -217,20 +217,65 @@ async def get_result(
 
     question_wise = []
 
-    if res.attempt:
-        for ans in res.attempt.answers:
-            q = await db.get(Question, ans.question_id)
+    if res.attempt and res.attempt.answers:
+        question_ids = [ans.question_id for ans in res.attempt.answers]
 
-            if q:
-                question_wise.append(
-                    {
-                        "question_id": str(q.id),
-                        "question_text": q.text[:100],
-                        "is_correct": ans.is_correct,
-                        "marks_awarded": ans.marks_awarded,
-                        "is_marked_for_review": ans.is_marked_for_review,
-                    }
-                )
+        questions_result = await db.execute(
+            select(Question)
+            .options(selectinload(Question.options))
+            .where(Question.id.in_(question_ids))
+        )
+        questions_by_id = {q.id: q for q in questions_result.scalars().all()}
+
+        for ans in res.attempt.answers:
+            q = questions_by_id.get(ans.question_id)
+
+            if not q:
+                continue
+
+            options = [
+                {
+                    "id": str(opt.id),
+                    "text": opt.text,
+                    "is_correct": opt.is_correct,
+                }
+                for opt in q.options
+            ]
+
+            selected_option_text = next(
+                (opt.text for opt in q.options if opt.id == ans.selected_option_id),
+                None,
+            )
+            selected_ids = set(ans.selected_option_ids or [])
+            if ans.selected_option_id:
+                selected_ids.add(str(ans.selected_option_id))
+            selected_option_texts = [
+                opt.text for opt in q.options if str(opt.id) in selected_ids
+            ]
+            correct_option_texts = [opt.text for opt in q.options if opt.is_correct]
+
+            question_wise.append(
+                {
+                    "question_id": str(q.id),
+                    "question_text": q.text,
+                    "question_type": q.question_type.value,
+                    "options": options,
+                    "selected_option_id": (
+                        str(ans.selected_option_id) if ans.selected_option_id else None
+                    ),
+                    "selected_option_text": selected_option_text,
+                    "selected_option_texts": selected_option_texts,
+                    "text_answer": ans.text_answer,
+                    "correct_option_text": (
+                        correct_option_texts[0] if correct_option_texts else None
+                    ),
+                    "correct_option_texts": correct_option_texts,
+                    "explanation": q.explanation,
+                    "is_correct": ans.is_correct,
+                    "marks_awarded": ans.marks_awarded,
+                    "is_marked_for_review": ans.is_marked_for_review,
+                }
+            )
 
     response = DetailedResultResponse.model_validate(res)
     response.question_wise = question_wise
