@@ -275,15 +275,27 @@ export function SearchBar({ value, onChange, placeholder = 'Search...' }: {
 }
 
 // ─── Toggle ────────────────────────────────────────────────────────────────
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  disabled,
+}: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label?: string
+  disabled?: boolean
+}) {
   return (
     <div className="flex items-center gap-2">
       <button
         type="button"
+        disabled={disabled}
         onClick={() => onChange(!checked)}
         className={clsx(
           'relative w-10 h-5 rounded-full transition-colors',
-          checked ? 'bg-brand-600' : 'bg-gray-200'
+          checked ? 'bg-brand-600' : 'bg-gray-200',
+          disabled && 'opacity-50 cursor-not-allowed'
         )}
       >
         <span className={clsx(
