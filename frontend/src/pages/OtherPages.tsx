@@ -118,7 +118,7 @@ export function ExamsListPage() {
                 </div>
 
                 <div className="flex gap-2 mt-auto pt-3 border-t border-gray-100">
-                  {exam.status === 'live' && user?.role === 'student' && (
+                  {(exam.status === 'live' || exam.status === 'published') && user?.role === 'student' && (
                     <Link to={`/exam/${exam.id}/start`} className="flex-1">
                       <Button variant="success" size="sm" className="w-full">🚀 Start Now</Button>
                     </Link>
