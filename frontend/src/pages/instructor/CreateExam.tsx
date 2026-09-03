@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,7 +10,7 @@ import { clsx } from 'clsx'
 
 import { examsApi, subjectsApi, questionsApi } from '@/lib/api'
 import { AppShell } from '@/components/layout/AppShell'
-import { Card, Button, Input, Textarea, Select, Toggle } from '@/components/ui'
+import { Card, Button, Input, Textarea, Select, Toggle, PageLoader } from '@/components/ui'
 import type { Question } from '@/types'
 
 const schema = z.object({
@@ -45,11 +45,6 @@ const FIELD_STEP: Record<keyof FormData, number> = {
  * Convert a <input type="datetime-local"> value (a timezone-naive
  * "YYYY-MM-DDTHH:mm" string representing the browser's LOCAL time)
  * into a true UTC ISO string before it's sent to the backend.
- *
- * Without this, the naive string gets stored/echoed and later
- * re-interpreted as UTC by some downstream renderer, silently
- * shifting the displayed time by the viewer's UTC offset
- * (e.g. 23:53 local becoming 5:23 AM the next day for IST users).
  */
 function toUtcIso(localDatetimeValue?: string): string | undefined {
   if (!localDatetimeValue) return undefined
@@ -58,9 +53,25 @@ function toUtcIso(localDatetimeValue?: string): string | undefined {
   return parsed.toISOString()
 }
 
+/*
+ * Inverse of toUtcIso: convert a UTC ISO string from the backend into the
+ * "YYYY-MM-DDTHH:mm" local-wall-clock format <input type="datetime-local">
+ * expects, so editing an exam shows the originally scheduled local time
+ * instead of a re-shifted or blank value.
+ */
+function toLocalDatetimeInputValue(isoString?: string | null): string {
+  if (!isoString) return ''
+  const d = new Date(isoString)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function CreateExamPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { examId } = useParams<{ examId?: string }>()
+  const isEditMode = Boolean(examId)
 
   const [step, setStep] = useState(0)
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([])
@@ -92,6 +103,7 @@ export default function CreateExamPage() {
     register,
     handleSubmit,
     watch,
+    reset,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -101,6 +113,62 @@ export default function CreateExamPage() {
       passing_marks: 40,
     },
   })
+
+  // ── Edit mode: load the existing exam and hydrate the form ──────────────
+  const {
+    data: existingExam,
+    isLoading: examLoading,
+    isError: examLoadError,
+  } = useQuery({
+    queryKey: ['exam', examId],
+    queryFn: () => examsApi.get(examId!),
+    enabled: isEditMode,
+  })
+
+  // Keyed on examId (not just "have we ever hydrated") so that navigating
+  // client-side from editing one exam straight to editing another — same
+  // route, only the :examId param changes, so React Router reuses this
+  // component instance — re-hydrates with the new exam's data instead of
+  // silently keeping the previous exam's form values and submitting them
+  // against the new exam's id.
+  const hydratedForExamId = useRef<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (!existingExam || hydratedForExamId.current === examId) return
+    hydratedForExamId.current = examId
+
+    reset({
+      title: existingExam.title,
+      description: existingExam.description || '',
+      instructions: existingExam.instructions || '',
+      duration_minutes: existingExam.duration_minutes,
+      total_marks: existingExam.total_marks,
+      passing_marks: existingExam.passing_marks,
+      scheduled_start: toLocalDatetimeInputValue(existingExam.scheduled_start),
+      subject_id: existingExam.subject_id || '',
+    })
+
+    setSettings({
+      negative_marking: existingExam.negative_marking,
+      negative_marks_per_wrong: existingExam.negative_marks_per_wrong,
+      randomize_questions: existingExam.randomize_questions,
+      randomize_options: existingExam.randomize_options,
+      show_result_immediately: existingExam.show_result_immediately,
+      allow_review: existingExam.allow_review,
+      max_attempts: existingExam.max_attempts,
+    })
+
+    setProctoring({
+      full_screen_required: existingExam.full_screen_required,
+      tab_switch_detection: existingExam.tab_switch_detection,
+      copy_paste_disabled: existingExam.copy_paste_disabled,
+      max_tab_switches_allowed: existingExam.max_tab_switches_allowed,
+    })
+
+    const questionIds = existingExam.sections.flatMap((s) => s.question_ids || [])
+    setSelectedQuestionIds(questionIds)
+    setStep(0)
+  }, [existingExam, examId, reset])
 
   const selectedSubjectId = watch('subject_id')
 
@@ -202,37 +270,47 @@ export default function CreateExamPage() {
     return marks
   }
 
+  function buildPayload(data: FormData) {
+    const perQuestionMarks = distributeMarks(data.total_marks, selectedQuestionIds.length)
+    const marksPerQuestion = perQuestionMarks[0] ?? 0
+
+    return {
+      ...data,
+      scheduled_start: toUtcIso(data.scheduled_start),
+      ...settings,
+      ...proctoring,
+
+      sections: [
+        {
+          name: 'General',
+          description: 'Exam questions',
+          order_index: 0,
+          marks: data.total_marks,
+          marks_per_question: marksPerQuestion,
+          question_ids: selectedQuestionIds,
+        },
+      ],
+    }
+  }
+
   /*
-   * Create the exam and attach the selected questions.
-   * scheduled_start is converted to UTC ISO here so the backend
-   * never receives a timezone-ambiguous string.
+   * Create a brand-new exam.
    */
   const createMutation = useMutation({
-    mutationFn: (data: FormData) => {
-      const perQuestionMarks = distributeMarks(data.total_marks, selectedQuestionIds.length)
-      const marksPerQuestion = perQuestionMarks[0] ?? 0
-
-      return examsApi.create({
-        ...data,
-        scheduled_start: toUtcIso(data.scheduled_start),
-        ...settings,
-        ...proctoring,
-
-        sections: [
-          {
-            name: 'General',
-            description: 'Exam questions',
-            order_index: 0,
-            marks: data.total_marks,
-            marks_per_question: marksPerQuestion,
-            question_ids: selectedQuestionIds,
-          },
-        ],
-      })
-    },
-
+    mutationFn: (data: FormData) => examsApi.create(buildPayload(data)),
     onError: (error: any) => {
       const message = error?.response?.data?.detail || error?.message || 'Failed to create exam'
+      toast.error(message)
+    },
+  })
+
+  /*
+   * Update an existing exam in place (used only in edit mode).
+   */
+  const updateMutation = useMutation({
+    mutationFn: (data: FormData) => examsApi.update(examId!, buildPayload(data)),
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail || error?.message || 'Failed to update exam'
       toast.error(message)
     },
   })
@@ -249,28 +327,53 @@ export default function CreateExamPage() {
     },
   })
 
+  const canPublish = !isEditMode || existingExam?.status === 'draft'
+  // Editing is only meaningful for exams that haven't run their course yet.
+  // 'live' is mid-attempt for someone right now; 'completed'/'cancelled' are
+  // final states — results may already be published against the exam as it
+  // was, so silently letting an instructor change questions/marks afterward
+  // would desync from what students already saw.
+  const lockedStatuses = ['live', 'completed', 'cancelled']
+  const isLocked = isEditMode && !!existingExam && lockedStatuses.includes(existingExam.status)
+  const lockedReason =
+    existingExam?.status === 'live'
+      ? "This exam is currently live and can't be edited."
+      : existingExam?.status === 'completed'
+        ? "This exam has already finished and can't be edited."
+        : existingExam?.status === 'cancelled'
+          ? "This exam was cancelled and can't be edited."
+          : ''
+
   /*
-   * Save as draft OR create + publish.
+   * Save as draft OR create + publish, in either create or edit mode.
    * Triggered explicitly via handleSubmit on button onClick — no native form submit.
    */
   async function onFinalSubmit(data: FormData, publish: boolean) {
     try {
+      if (isLocked) {
+        toast.error(lockedReason || 'This exam can no longer be edited')
+        return
+      }
+
       if (publish && selectedQuestionIds.length === 0) {
         toast.error('Select or upload at least one question before publishing')
         setStep(1)
         return
       }
 
-      const exam = await createMutation.mutateAsync(data)
+      const exam = isEditMode
+        ? await updateMutation.mutateAsync(data)
+        : await createMutation.mutateAsync(data)
 
-      if (publish) {
+      if (publish && canPublish) {
         await publishMutation.mutateAsync(exam.id)
         toast.success('Exam published!')
       } else {
-        toast.success('Exam saved as draft!')
+        toast.success(isEditMode ? 'Exam updated!' : 'Exam saved as draft!')
       }
 
       qc.invalidateQueries({ queryKey: ['exams'] })
+      qc.invalidateQueries({ queryKey: ['exam', examId] })
       navigate('/exams')
     } catch (error: any) {
       console.error('Exam submission failed:', error)
@@ -298,10 +401,28 @@ export default function CreateExamPage() {
   }
 
   const watchData = watch()
-  const isSubmitting = createMutation.isPending || publishMutation.isPending
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || publishMutation.isPending
+
+  if (isEditMode && examLoading) {
+    return (
+      <AppShell title="Edit Exam">
+        <PageLoader />
+      </AppShell>
+    )
+  }
+
+  if (isEditMode && examLoadError) {
+    return (
+      <AppShell title="Edit Exam">
+        <div className="py-12 text-center text-sm text-red-600">
+          Couldn't load this exam. It may have been deleted, or you may not have access to it.
+        </div>
+      </AppShell>
+    )
+  }
 
   return (
-    <AppShell title="Create Exam">
+    <AppShell title={isEditMode ? 'Edit Exam' : 'Create Exam'}>
       {/* Step progress */}
       <div className="flex items-center gap-0 mb-8">
         {STEPS.map((s, i) => (
@@ -326,6 +447,12 @@ export default function CreateExamPage() {
         ))}
       </div>
 
+      {isLocked && (
+        <div className="mb-5 p-3 rounded-xl text-sm bg-amber-50 border border-amber-200 text-amber-700">
+          ⚠️ {lockedReason} You can still review its settings below.
+        </div>
+      )}
+
       <Card className="max-w-3xl">
         {/* =========================================================
             STEP 0: BASIC INFO
@@ -338,14 +465,21 @@ export default function CreateExamPage() {
               label="Exam Title *"
               placeholder="e.g. Computer Networks Midterm Examination"
               error={errors.title?.message}
+              disabled={isLocked}
               {...register('title')}
             />
 
-            <Textarea label="Description" placeholder="Brief description of the exam…" {...register('description')} />
+            <Textarea
+              label="Description"
+              placeholder="Brief description of the exam…"
+              disabled={isLocked}
+              {...register('description')}
+            />
 
             <Textarea
               label="Instructions for Students"
               placeholder="Read all questions carefully. Each correct answer carries 2 marks…"
+              disabled={isLocked}
               {...register('instructions')}
             />
 
@@ -353,11 +487,17 @@ export default function CreateExamPage() {
               <Select
                 label="Subject"
                 placeholder="Select subject"
+                disabled={isLocked}
                 options={(subjects || []).map((s) => ({ value: s.id, label: s.name }))}
                 {...register('subject_id')}
               />
 
-              <Input label="Scheduled Start" type="datetime-local" {...register('scheduled_start')} />
+              <Input
+                label="Scheduled Start"
+                type="datetime-local"
+                disabled={isLocked}
+                {...register('scheduled_start')}
+              />
             </div>
 
             <div className="grid grid-cols-3 gap-4">
@@ -365,6 +505,7 @@ export default function CreateExamPage() {
                 label="Duration (minutes) *"
                 type="number"
                 error={errors.duration_minutes?.message}
+                disabled={isLocked}
                 {...register('duration_minutes', { valueAsNumber: true })}
               />
 
@@ -372,6 +513,7 @@ export default function CreateExamPage() {
                 label="Total Marks *"
                 type="number"
                 error={errors.total_marks?.message}
+                disabled={isLocked}
                 {...register('total_marks', { valueAsNumber: true })}
               />
 
@@ -379,6 +521,7 @@ export default function CreateExamPage() {
                 label="Passing Marks *"
                 type="number"
                 error={errors.passing_marks?.message}
+                disabled={isLocked}
                 {...register('passing_marks', { valueAsNumber: true })}
               />
             </div>
@@ -396,13 +539,18 @@ export default function CreateExamPage() {
                 <p className="text-xs text-gray-500">Select questions from the Question Bank or upload a CSV file.</p>
               </div>
 
-              <label className={clsx('btn btn-secondary btn-sm cursor-pointer', uploadingQuestions && 'opacity-50 cursor-not-allowed')}>
+              <label
+                className={clsx(
+                  'btn btn-secondary btn-sm cursor-pointer',
+                  (uploadingQuestions || isLocked) && 'opacity-50 cursor-not-allowed'
+                )}
+              >
                 📤 Upload CSV
                 <input
                   type="file"
                   accept=".csv"
                   className="hidden"
-                  disabled={uploadingQuestions}
+                  disabled={uploadingQuestions || isLocked}
                   onChange={(e) => {
                     const file = e.target.files?.[0]
                     if (file) handleQuestionUpload(file)
@@ -435,13 +583,15 @@ export default function CreateExamPage() {
                       key={question.id}
                       className={clsx(
                         'block p-3 border rounded-xl cursor-pointer transition-colors',
-                        selected ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:bg-gray-50'
+                        selected ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:bg-gray-50',
+                        isLocked && 'opacity-60 cursor-not-allowed'
                       )}
                     >
                       <div className="flex items-start gap-3">
                         <input
                           type="checkbox"
                           checked={selected}
+                          disabled={isLocked}
                           onChange={() => {
                             setSelectedQuestionIds((prev) =>
                               selected ? prev.filter((id) => id !== question.id) : [...prev, question.id]
@@ -514,6 +664,7 @@ export default function CreateExamPage() {
 
                   <Toggle
                     checked={settings[key as keyof typeof settings] as boolean}
+                    disabled={isLocked}
                     onChange={(v) => setSettings((s) => ({ ...s, [key]: v }))}
                   />
                 </div>
@@ -523,6 +674,7 @@ export default function CreateExamPage() {
                 <Input
                   label="Marks deducted per wrong answer"
                   type="number"
+                  disabled={isLocked}
                   value={settings.negative_marks_per_wrong}
                   onChange={(e) => setSettings((s) => ({ ...s, negative_marks_per_wrong: +e.target.value }))}
                   hint="e.g. 0.25 deducts ¼ mark per wrong answer"
@@ -535,6 +687,7 @@ export default function CreateExamPage() {
                   type="number"
                   min={1}
                   max={5}
+                  disabled={isLocked}
                   value={settings.max_attempts}
                   onChange={(e) => setSettings((s) => ({ ...s, max_attempts: +e.target.value }))}
                   className="input w-24"
@@ -566,6 +719,7 @@ export default function CreateExamPage() {
 
                   <Toggle
                     checked={proctoring[key as keyof typeof proctoring] as boolean}
+                    disabled={isLocked}
                     onChange={(v) => setProctoring((p) => ({ ...p, [key]: v }))}
                   />
                 </div>
@@ -580,6 +734,7 @@ export default function CreateExamPage() {
                     type="number"
                     min={1}
                     max={10}
+                    disabled={isLocked}
                     value={proctoring.max_tab_switches_allowed}
                     onChange={(e) => setProctoring((p) => ({ ...p, max_tab_switches_allowed: +e.target.value }))}
                     className="input w-24"
@@ -595,11 +750,15 @@ export default function CreateExamPage() {
         ========================================================= */}
         {step === 4 && (
           <div>
-            <h3 className="text-base font-semibold text-gray-800 mb-4">Review & Publish</h3>
+            <h3 className="text-base font-semibold text-gray-800 mb-4">
+              {isEditMode ? 'Review & Save' : 'Review & Publish'}
+            </h3>
 
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5">
               <p className="text-sm text-brand-700 font-medium">
-                Review your exam before publishing. Once published, students can view it.
+                {isEditMode
+                  ? 'Review your changes before saving.'
+                  : 'Review your exam before publishing. Once published, students can view it.'}
               </p>
             </div>
 
@@ -635,7 +794,10 @@ export default function CreateExamPage() {
               )}
             >
               {selectedQuestionIds.length > 0 ? (
-                <>✅ {selectedQuestionIds.length} question(s) selected. You can save the exam as a draft or publish it now.</>
+                <>
+                  ✅ {selectedQuestionIds.length} question(s) selected. You can{' '}
+                  {isEditMode ? 'save your changes' : 'save the exam as a draft or publish it now'}.
+                </>
               ) : (
                 <>⚠️ No questions selected. Add at least one question before publishing.</>
               )}
@@ -658,7 +820,7 @@ export default function CreateExamPage() {
 
           <div className="flex gap-2">
             {step < STEPS.length - 1 ? (
-              <Button type="button" variant="primary" onClick={() => setStep((s) => s + 1)}>
+              <Button type="button" variant="primary" onClick={() => setStep((s) => s + 1)} disabled={isLocked}>
                 Next →
               </Button>
             ) : (
@@ -667,21 +829,23 @@ export default function CreateExamPage() {
                   type="button"
                   variant="secondary"
                   loading={isSubmitting}
-                  disabled={isSubmitting}
-                  onClick={handleSubmit((data) => onFinalSubmit(data, false), onValidationError('Draft'))}
+                  disabled={isSubmitting || isLocked}
+                  onClick={handleSubmit((data) => onFinalSubmit(data, false), onValidationError('Save'))}
                 >
-                  Save as Draft
+                  {isEditMode ? 'Save Changes' : 'Save as Draft'}
                 </Button>
 
-                <Button
-                  type="button"
-                  variant="primary"
-                  loading={isSubmitting}
-                  disabled={isSubmitting}
-                  onClick={handleSubmit((data) => onFinalSubmit(data, true), onValidationError('Publish'))}
-                >
-                  🚀 Publish Exam
-                </Button>
+                {canPublish && (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    loading={isSubmitting}
+                    disabled={isSubmitting || isLocked}
+                    onClick={handleSubmit((data) => onFinalSubmit(data, true), onValidationError('Publish'))}
+                  >
+                    🚀 Publish Exam
+                  </Button>
+                )}
               </>
             )}
           </div>
