@@ -299,6 +299,7 @@ class ExamSectionResponse(BaseResponse):
     order_index: int
     marks: float
     time_limit_minutes: Optional[int] = None
+    question_ids: List[UUID] = []
 
 
 class ExamCreate(BaseModel):
@@ -341,14 +342,30 @@ class ExamUpdate(BaseModel):
     total_marks: Optional[float] = None
     passing_marks: Optional[float] = None
     negative_marking: Optional[bool] = None
+    negative_marks_per_wrong: Optional[float] = None
     randomize_questions: Optional[bool] = None
     randomize_options: Optional[bool] = None
     show_result_immediately: Optional[bool] = None
+    allow_review: Optional[bool] = None
+    max_attempts: Optional[int] = None
     full_screen_required: Optional[bool] = None
     tab_switch_detection: Optional[bool] = None
     copy_paste_disabled: Optional[bool] = None
     max_tab_switches_allowed: Optional[int] = None
     status: Optional[str] = None
+    # When provided, fully replaces the exam's sections/questions
+    # (same shape as ExamCreate.sections). Omit to leave questions untouched.
+    sections: Optional[List[ExamSectionCreate]] = None
+
+    @model_validator(mode="after")
+    def validate_passing_marks(self):
+        # Both are optional here (unlike ExamCreate) since a PUT may only
+        # touch some fields — only enforce the check when the caller is
+        # actually setting both marks values in this request.
+        if self.passing_marks is not None and self.total_marks is not None:
+            if self.passing_marks > self.total_marks:
+                raise ValueError("Passing marks cannot exceed total marks")
+        return self
 
 
 class ExamResponse(BaseResponse):
