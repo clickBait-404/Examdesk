@@ -201,12 +201,30 @@ export interface Result {
   published_at?: string
   created_at: string
   exam?: ExamListItem
-  question_wise?: {
-    question_id: string
-    question_text: string
-    is_correct: boolean | null
-    marks_awarded: number | null
-  }[]
+  question_wise?: QuestionWiseResult[]
+}
+
+export interface QuestionWiseOption {
+  id: string
+  text: string
+  is_correct: boolean
+}
+
+export interface QuestionWiseResult {
+  question_id: string
+  question_text: string
+  question_type: string
+  options: QuestionWiseOption[]
+  selected_option_id: string | null
+  selected_option_text: string | null
+  selected_option_texts: string[]
+  text_answer: string | null
+  correct_option_text: string | null
+  correct_option_texts: string[]
+  explanation: string | null
+  is_correct: boolean | null
+  marks_awarded: number | null
+  is_marked_for_review: boolean
 }
 
 // ─── Analytics ─────────────────────────────────────────────────────────────
