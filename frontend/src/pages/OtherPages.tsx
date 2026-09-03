@@ -130,6 +130,11 @@ export function ExamsListPage() {
                   )}
                   {canManage && (
                     <>
+                      {(exam.status === 'live' || exam.status === 'completed') && (
+                        <Link to={`/results/exam/${exam.id}`}>
+                          <Button variant="secondary" size="sm">Results</Button>
+                        </Link>
+                      )}
                       <Link to={`/exams/${exam.id}/edit`}>
                         <Button variant="ghost" size="sm">Edit</Button>
                       </Link>
