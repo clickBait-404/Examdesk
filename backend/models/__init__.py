@@ -85,6 +85,7 @@ class AuditAction(str, enum.Enum):
     user_created = "user_created"
     user_updated = "user_updated"
     exam_created = "exam_created"
+    exam_updated = "exam_updated"
     exam_published = "exam_published"
     question_added = "question_added"
 
@@ -320,7 +321,19 @@ class ExamSection(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     exam = relationship("Exam", back_populates="sections")
-    exam_questions = relationship("ExamQuestion", back_populates="section", cascade="all, delete-orphan")
+    exam_questions = relationship(
+        "ExamQuestion",
+        back_populates="section",
+        cascade="all, delete-orphan",
+        order_by="ExamQuestion.order_index",
+    )
+
+    @property
+    def question_ids(self) -> list:
+        """Question IDs attached to this section, in order. Relies on
+        exam_questions being eager-loaded (see _get_exam_or_404) — used by
+        ExamSectionResponse so the frontend can hydrate the edit form."""
+        return [eq.question_id for eq in self.exam_questions]
 
 
 class ExamQuestion(Base, UUIDMixin):
