@@ -266,15 +266,69 @@ async def update_exam(exam_id: UUID, payload: ExamUpdate, current_user: RequireI
     exam = await _get_exam_or_404(exam_id, db)
     await _require_exam_owner(exam, current_user, db)
 
-    if exam.status == ExamStatus.live:
-        raise HTTPException(status_code=400, detail="Cannot edit a live exam")
+    if exam.status in (ExamStatus.live, ExamStatus.completed, ExamStatus.cancelled):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot edit a {exam.status.value} exam",
+        )
 
-    update_data = payload.model_dump(exclude_none=True)
+    # ExamUpdate's own validator only catches passing_marks > total_marks
+    # when BOTH are present in this request. Cross-check against the
+    # exam's current (pre-update) value too, so setting just one field
+    # can't slip past into an invalid state either.
+    effective_total = payload.total_marks if payload.total_marks is not None else exam.total_marks
+    effective_passing = payload.passing_marks if payload.passing_marks is not None else exam.passing_marks
+    if effective_passing > effective_total:
+        raise HTTPException(status_code=422, detail="Passing marks cannot exceed total marks")
+
+    # sections replace the existing question selection wholesale when
+    # provided; handled separately since it's a list of models, not a
+    # column this ORM UPDATE can set directly.
+    update_data = payload.model_dump(exclude_none=True, exclude={"sections"})
     if update_data:
         if "status" in update_data:
             update_data["status"] = ExamStatus(update_data["status"])
         await db.execute(update(Exam).where(Exam.id == exam_id).values(**update_data))
-        await db.commit()
+
+    if payload.sections is not None:
+        # Drop existing sections (cascades to their exam_questions) and
+        # rebuild from the submitted list, mirroring create_exam's logic.
+        for section in list(exam.sections):
+            await db.delete(section)
+        await db.flush()
+
+        for sec_data in payload.sections:
+            section = ExamSection(
+                exam_id=exam.id,
+                name=sec_data.name,
+                description=sec_data.description,
+                order_index=sec_data.order_index,
+                marks=sec_data.marks,
+                time_limit_minutes=sec_data.time_limit_minutes,
+            )
+            db.add(section)
+            await db.flush()
+
+            for idx, q_id in enumerate(sec_data.question_ids):
+                marks = sec_data.marks_per_question or (
+                    sec_data.marks / len(sec_data.question_ids) if sec_data.question_ids else 1.0
+                )
+                db.add(ExamQuestion(
+                    exam_id=exam.id,
+                    section_id=section.id,
+                    question_id=q_id,
+                    order_index=idx,
+                    marks=marks,
+                ))
+
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action=AuditAction.exam_updated,
+        resource_type="exam",
+        resource_id=str(exam_id),
+        description=f"Updated exam: {exam.title}",
+    ))
+    await db.commit()
 
     return ExamResponse.model_validate(await _get_exam_or_404(exam_id, db))
 
@@ -337,16 +391,21 @@ async def clone_exam(exam_id: UUID, current_user: CurrentUser, db: DB):
         description=source.description,
         instructions=source.instructions,
         duration_minutes=source.duration_minutes,
+        scheduled_start=source.scheduled_start,
+        scheduled_end=source.scheduled_end,
         total_marks=source.total_marks,
         passing_marks=source.passing_marks,
         negative_marking=source.negative_marking,
         negative_marks_per_wrong=source.negative_marks_per_wrong,
         randomize_questions=source.randomize_questions,
         randomize_options=source.randomize_options,
+        show_result_immediately=source.show_result_immediately,
+        allow_review=source.allow_review,
         max_attempts=source.max_attempts,
         full_screen_required=source.full_screen_required,
         tab_switch_detection=source.tab_switch_detection,
         copy_paste_disabled=source.copy_paste_disabled,
+        max_tab_switches_allowed=source.max_tab_switches_allowed,
         subject_id=source.subject_id,
         instructor_id=instructor_id,
         status=ExamStatus.draft,
@@ -358,8 +417,10 @@ async def clone_exam(exam_id: UUID, current_user: CurrentUser, db: DB):
         new_section = ExamSection(
             exam_id=clone.id,
             name=section.name,
+            description=section.description,
             order_index=section.order_index,
             marks=section.marks,
+            time_limit_minutes=section.time_limit_minutes,
         )
         db.add(new_section)
         await db.flush()
@@ -370,6 +431,7 @@ async def clone_exam(exam_id: UUID, current_user: CurrentUser, db: DB):
                 question_id=eq.question_id,
                 order_index=eq.order_index,
                 marks=eq.marks,
+                is_compulsory=eq.is_compulsory,
             ))
 
     await db.commit()
