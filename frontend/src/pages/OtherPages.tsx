@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { examsApi, resultsApi, subjectsApi, auditApi } from '@/lib/api'
@@ -17,8 +17,12 @@ import {
 export function ExamsListPage() {
   const { user } = useAuthStore()
   const qc = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  // Seeded from ?status= in the URL (e.g. the sidebar's "Results" link uses
+  // ?status=completed) so a link can land the user on a pre-filtered view
+  // instead of always opening to "All".
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
   const [page, setPage] = useState(1)
 
   const { data, isLoading } = useQuery({
